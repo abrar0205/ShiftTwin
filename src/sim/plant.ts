@@ -38,12 +38,13 @@ export function generatePlant(seed = 20261029): Plant {
   const rand = mulberry32(seed)
   const workers: WorkerRecord[] = []
   let id = 1
+  const generatedStations = stations.map(station => ({ ...station, demandRank: rand() }))
 
   // Scarcity is generated from the seed, never attached to a named station.
-  const stationAffinity = new Map(stations.map(station => [station.id, 0.38 + rand() * 0.50]))
+  const stationAffinity = new Map(generatedStations.map(station => [station.id, 0.38 + rand() * 0.50]))
   const shiftAffinity = new Map<string, number>()
   for (const shift of shifts) {
-    for (const station of stations) {
+    for (const station of generatedStations) {
       shiftAffinity.set(`${shift}|${station.id}`, 0.72 + rand() * 0.28)
     }
   }
@@ -51,14 +52,14 @@ export function generatePlant(seed = 20261029): Plant {
   for (const shift of shifts) {
     const shiftWorkers: WorkerRecord[] = []
     for (let i = 0; i < 60; i++) {
-      const home = stations[i % stations.length]
+      const home = generatedStations[i % generatedStations.length]
       const qualifications: Qualification[] = [qualification(home.id, rand)]
-      const extraCount = (rand() < 0.62 ? 1 : 0) + (rand() < 0.18 ? 1 : 0)
+      const extraCount = 1 + (rand() < 0.25 ? 1 : 0)
 
       for (let q = 0; q < extraCount; q++) {
         let tries = 0
-        while (tries++ < 12) {
-          const candidate = stations[Math.floor(rand() * stations.length)]
+        while (tries++ < 18) {
+          const candidate = generatedStations[Math.floor(rand() * generatedStations.length)]
           if (qualifications.some(x => x.stationId === candidate.id)) continue
           const affinity = (stationAffinity.get(candidate.id) ?? 0.6) * (shiftAffinity.get(`${shift}|${candidate.id}`) ?? 0.85)
           if (rand() > affinity) continue
@@ -77,7 +78,7 @@ export function generatePlant(seed = 20261029): Plant {
     workers.push(...shiftWorkers)
   }
 
-  return { seed, areas, stations, workers }
+  return { seed, areas, stations: generatedStations, workers }
 }
 
 export const BASELINE_SCENARIO = {
