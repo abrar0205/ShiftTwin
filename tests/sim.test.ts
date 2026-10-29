@@ -34,6 +34,15 @@ describe('ShiftTwin simulation', () => {
     expect(a.worst.stationId).toBe(b.worst.stationId)
   })
 
+  it('produces a resilient baseline and a lower-stress scenario score', () => {
+    const plant=generatePlant(20261029)
+    const baseline=simulate(plant,{...BASELINE_SCENARIO},900)
+    const stressed=simulate(plant,{...BASELINE_SCENARIO,absenceRate:12,demandPct:15,trainingCoverage:90,certHorizon:4},900)
+    expect(baseline.readiness).toBeGreaterThan(75)
+    expect(baseline.readiness).toBeLessThanOrEqual(100)
+    expect(stressed.readiness).toBeLessThan(baseline.readiness)
+  })
+
   it('adding a qualification cannot reduce matching-based readiness under the same random trials', () => {
     const plant=generatePlant(99)
     const scenario={...BASELINE_SCENARIO,absenceRate:10,demandPct:12,trainingCoverage:95}
