@@ -551,3 +551,23 @@ footer p { margin: 0; color: var(--text-faint); font-size: 8px; text-align: righ
   .factory-shell { height: 420px; }
   .factory-shell-hud i:nth-of-type(2), .factory-shell-hud span:nth-of-type(3), .factory-shell-hud strong:nth-of-type(3) { display: none; }
 }
+
+
+/* Living Factory Floor — phase 2 data binding */
+.factory-operating-hud {
+  right: 16px; width: auto; max-width: calc(100% - 32px);
+  align-items: stretch; padding: 8px 11px;
+}
+.factory-operating-hud > div { display: grid; gap: 1px; min-width: 88px; }
+.factory-operating-hud > div:nth-child(7) { min-width: 124px; }
+.factory-operating-hud small { color: #65717d; font: 8px "JetBrains Mono",monospace; white-space: nowrap; }
+.factory-operating-hud i { align-self: stretch; height: auto; min-height: 30px; }
+.cert-lapsed-label { color: #9ea6ad !important; text-transform: uppercase; letter-spacing: .04em; }
+@media (max-width: 980px) {
+  .factory-operating-hud > div:nth-child(7), .factory-operating-hud > i:nth-child(6) { display: none; }
+}
+@media (max-width: 720px) {
+  .factory-operating-hud { right: 10px; max-width: calc(100% - 20px); }
+  .factory-operating-hud > div:nth-child(5), .factory-operating-hud > i:nth-child(4) { display: none; }
+  .factory-operating-hud .hud-compact, .factory-operating-hud > i:last-of-type { display: none; }
+}

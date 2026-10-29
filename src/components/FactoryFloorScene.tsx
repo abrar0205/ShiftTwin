@@ -4,20 +4,18 @@ import { ContactShadows, Environment, Html, Instance, Instances, OrbitControls }
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
-import type { Shift, SimResult, Station } from '../sim/types'
+import type { Shift, SimResult, Station, TrialStationState } from '../sim/types'
 
 const STATUS = {
-  ready: { color: '#3ddc97', label: 'resilient' },
-  watch: { color: '#f5b841', label: 'watch' },
-  risk: { color: '#ff5d5d', label: 'constraint' },
+  ready: { color: '#3ddc97', label: 'staffed' },
+  watch: { color: '#f5b841', label: 'short by 1' },
+  risk: { color: '#ff5d5d', label: 'short by 2+' },
 } as const
 
 type Tone = keyof typeof STATUS
 
-function toneForRisk(value: number): Tone {
-  if (value >= 20) return 'risk'
-  if (value >= 5) return 'watch'
-  return 'ready'
+function toneForStation(station: TrialStationState): Tone {
+  return station.status === 'staffed' ? 'ready' : station.status === 'short' ? 'watch' : 'risk'
 }
 
 const lighting = {
@@ -84,7 +82,18 @@ function AreaZone({ x, label, night }: { x: number; label: string; night: boolea
   </group>
 }
 
-function Workcell({ station, x, tone, risk, required }: { station: Station; x: number; tone: Tone; risk: number; required: number }) {
+function Workcell({
+  station,
+  x,
+  state,
+  aggregateRisk,
+}: {
+  station: Station
+  x: number
+  state: TrialStationState
+  aggregateRisk: number
+}) {
+  const tone = toneForStation(state)
   const meta = STATUS[tone]
   return <group position={[x,0,0]}>
     <mesh position={[0,.055,0]} receiveShadow>
@@ -106,11 +115,12 @@ function Workcell({ station, x, tone, risk, required }: { station: Station; x: n
       <meshStandardMaterial color={meta.color} emissive={meta.color} emissiveIntensity={tone === 'risk' ? 5.5 : 3.4} toneMapped={false}/>
     </mesh>
 
-    <Html position={[0,2.75,-1.95]} center distanceFactor={12} occlude={false}>
+    <Html position={[0,2.78,-1.95]} center distanceFactor={12} occlude={false}>
       <div className={`factory-cell-label ${tone}`}>
         <strong>{station.name}</strong>
-        <span>{meta.label} · {risk.toFixed(1)}%</span>
-        <small>{required} planned positions</small>
+        <span>{state.assigned}/{state.required} assigned · {(state.throughputFactor*100).toFixed(0)}%</span>
+        <small>{meta.label} · aggregate fail risk {aggregateRisk.toFixed(1)}%</small>
+        {state.lapsedPresentWorkerSlots.length > 0 && <small className="cert-lapsed-label">cert lapsed candidate present</small>}
       </div>
     </Html>
   </group>
@@ -135,28 +145,97 @@ function Conveyor() {
   </group>
 }
 
-function PlannedWorkers({ stations, positions, requiredByStation }: { stations: Station[]; positions: number[]; requiredByStation: Map<string, number> }) {
-  const workers = useMemo(() => {
-    const rows: Array<{ key: string; position: [number,number,number] }> = []
+function EmptySpot({ position }: { position: [number,number,number] }) {
+  const segments = useMemo(() => Array.from({ length: 8 }, (_, i) => {
+    const angle = i * Math.PI / 4
+    return {
+      position: [
+        position[0] + Math.cos(angle) * .19,
+        .09,
+        position[2] + Math.sin(angle) * .19,
+      ] as [number,number,number],
+      rotation: [0,-angle,0] as [number,number,number],
+    }
+  }), [position])
+
+  return <group>
+    {segments.map((segment,i) => <mesh key={i} position={segment.position} rotation={segment.rotation}>
+      <boxGeometry args={[.15,.018,.026]}/>
+      <meshBasicMaterial color="#75808b" transparent opacity={.48}/>
+    </mesh>)}
+  </group>
+}
+
+function TrialWorkers({
+  stations,
+  positions,
+  trial,
+}: {
+  stations: Station[]
+  positions: number[]
+  trial: SimResult['representativeTrials'][Shift]
+}) {
+  const layout = useMemo(() => {
+    const assigned: Array<[number,number,number]> = []
+    const assignedHelmets: Array<[number,number,number]> = []
+    const lapsed: Array<[number,number,number]> = []
+    const lapsedHelmets: Array<[number,number,number]> = []
+    const empty: Array<[number,number,number]> = []
+
     stations.forEach((station, index) => {
-      const count = requiredByStation.get(station.id) ?? station.baseRequired
-      for (let i = 0; i < count; i++) {
+      const state = trial.stations.find(s => s.stationId === station.id)
+      if (!state) return
+      const spots = Array.from({ length: state.required }, (_, i) => {
         const side = i % 2 === 0 ? -1 : 1
         const row = Math.floor(i / 2)
-        rows.push({
-          key: `${station.id}-${i}`,
-          position: [positions[index] + (side * .55), .88, 1.55 + row * .46] as [number,number,number],
-        })
-      }
-    })
-    return rows
-  }, [stations, positions, requiredByStation])
+        return [positions[index] + side * .55, .88, 1.55 + row * .46] as [number,number,number]
+      })
 
-  return <Instances limit={workers.length}>
-    <capsuleGeometry args={[.13,.42,4,8]}/>
-    <meshStandardMaterial color="#8b96a3" roughness={.58} metalness={.06}/>
-    {workers.map(worker => <Instance key={worker.key} position={worker.position} castShadow />)}
-  </Instances>
+      let cursor = 0
+      for (let i = 0; i < state.assigned; i++, cursor++) {
+        const p = spots[cursor]
+        assigned.push(p)
+        assignedHelmets.push([p[0],p[1]+.38,p[2]])
+      }
+
+      const lapsedCount = Math.min(state.deficit, state.lapsedPresentWorkerSlots.length)
+      for (let i = 0; i < lapsedCount; i++, cursor++) {
+        const p = spots[cursor]
+        lapsed.push(p)
+        lapsedHelmets.push([p[0],p[1]+.38,p[2]])
+      }
+
+      for (; cursor < spots.length; cursor++) empty.push(spots[cursor])
+    })
+
+    return { assigned, assignedHelmets, lapsed, lapsedHelmets, empty }
+  }, [stations, positions, trial])
+
+  return <>
+    <Instances limit={layout.assigned.length}>
+      <capsuleGeometry args={[.13,.42,4,8]}/>
+      <meshStandardMaterial color="#9ba7b3" roughness={.58} metalness={.06}/>
+      {layout.assigned.map((position,i) => <Instance key={i} position={position} castShadow/>)}
+    </Instances>
+    <Instances limit={layout.assignedHelmets.length}>
+      <sphereGeometry args={[.16,8,6]}/>
+      <meshStandardMaterial color="#d5a936" roughness={.5}/>
+      {layout.assignedHelmets.map((position,i) => <Instance key={i} position={position} scale={[1,.52,1]} castShadow/>)}
+    </Instances>
+
+    <Instances limit={layout.lapsed.length}>
+      <capsuleGeometry args={[.13,.42,4,8]}/>
+      <meshStandardMaterial color="#565e66" roughness={.72}/>
+      {layout.lapsed.map((position,i) => <Instance key={i} position={position} castShadow/>)}
+    </Instances>
+    <Instances limit={layout.lapsedHelmets.length}>
+      <sphereGeometry args={[.16,8,6]}/>
+      <meshStandardMaterial color="#6d747a" roughness={.68}/>
+      {layout.lapsedHelmets.map((position,i) => <Instance key={i} position={position} scale={[1,.52,1]} castShadow/>)}
+    </Instances>
+
+    {layout.empty.map((position,i) => <EmptySpot key={i} position={position}/>)}
+  </>
 }
 
 function StaticCars({ positions }: { positions: number[] }) {
@@ -202,12 +281,10 @@ function OverheadLights({ night }: { night: boolean }) {
 function FactoryWorld({ result, shift, seed, reducedMotion }: { result: SimResult; shift: Shift; seed: number; reducedMotion: boolean }) {
   const plant = useMemo(() => generatePlant(seed), [seed])
   const xs = useMemo(() => plant.stations.map((_s,i) => -16.5 + i * 3), [plant.stations])
+  const trial = result.representativeTrials[shift]
+  const stationStates = useMemo(() => new Map(trial.stations.map(state => [state.stationId,state])), [trial])
   const risks = useMemo(
     () => new Map(result.stationRisks.filter(r => r.shift === shift).map(r => [r.stationId, r])),
-    [result, shift],
-  )
-  const requiredByStation = useMemo(
-    () => new Map(result.stationRisks.filter(r => r.shift === shift).map(r => [r.stationId, r.required])),
     [result, shift],
   )
   const carPositions = useMemo(() => [-15,-11.6,-8.2,-4.8,-1.4,2,5.4,8.8,12.2,15.6], [])
@@ -229,20 +306,19 @@ function FactoryWorld({ result, shift, seed, reducedMotion }: { result: SimResul
 
     <Conveyor/>
     <StaticCars positions={carPositions}/>
-    <PlannedWorkers stations={plant.stations} positions={xs} requiredByStation={requiredByStation}/>
+    <TrialWorkers stations={plant.stations} positions={xs} trial={trial}/>
     <StaticAgvs/>
     <OverheadLights night={shift === 'Night'}/>
 
     {plant.stations.map((station,i) => {
-      const risk = risks.get(station.id)
-      const riskValue = risk?.uncoveredProbability ?? 0
+      const state = stationStates.get(station.id)!
+      const aggregateRisk = risks.get(station.id)?.uncoveredProbability ?? 0
       return <Workcell
         key={station.id}
         station={station}
         x={xs[i]}
-        tone={toneForRisk(riskValue)}
-        risk={riskValue}
-        required={risk?.required ?? station.baseRequired}
+        state={state}
+        aggregateRisk={aggregateRisk}
       />
     })}
 

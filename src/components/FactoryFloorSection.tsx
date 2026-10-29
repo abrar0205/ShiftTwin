@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { generatePlant } from '../sim/plant'
-import type { Shift, SimResult } from '../sim/types'
+import type { Shift, SimResult, TrialStationState } from '../sim/types'
 import { useTwinStore } from '../state/store'
 import { GlassPanel, SectionHeading } from './ui'
 
@@ -18,10 +18,8 @@ function webglAvailable() {
   }
 }
 
-function statusForRisk(risk: number) {
-  if (risk >= 20) return 'risk'
-  if (risk >= 5) return 'watch'
-  return 'ready'
+function toneForStation(station: TrialStationState) {
+  return station.status === 'staffed' ? 'ready' : station.status === 'short' ? 'watch' : 'risk'
 }
 
 class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -42,24 +40,22 @@ class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode
 
 function FloorFallback({ result, shift, seed }: { result: SimResult; shift: Shift; seed: number }) {
   const plant = useMemo(() => generatePlant(seed), [seed])
-  const risks = useMemo(
-    () => new Map(result.stationRisks.filter(r => r.shift === shift).map(r => [r.stationId, r])),
-    [result, shift],
-  )
+  const trial = result.representativeTrials[shift]
+  const stationState = useMemo(() => new Map(trial.stations.map(s => [s.stationId, s])), [trial])
 
   return <GlassPanel className="factory-fallback">
     <div className="factory-fallback-head">
-      <span>2D FALLBACK</span>
-      <strong>WebGL unavailable · analytical station view active</strong>
+      <span>2D FALLBACK · TRIAL #{trial.trialIndex}</span>
+      <strong>{trial.lineRateJPH.toFixed(1)} JPH · {trial.carsLostPerShift.toFixed(1)} cars lost / shift</strong>
     </div>
     <div className="factory-fallback-line">
       {plant.stations.map((station, index) => {
-        const risk = risks.get(station.id)
-        const tone = statusForRisk(risk?.uncoveredProbability ?? 0)
+        const state = stationState.get(station.id)!
+        const tone = toneForStation(state)
         return <div className="fallback-cell" key={station.id}>
           <span className={tone}>{index + 1}</span>
           <strong>{station.name}</strong>
-          <small>{tone === 'risk' ? 'constraint' : tone === 'watch' ? 'watch' : 'resilient'}</small>
+          <small>{state.assigned}/{state.required} assigned · {(state.throughputFactor*100).toFixed(0)}% throughput</small>
         </div>
       })}
     </div>
@@ -79,6 +75,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
   const [tabVisible, setTabVisible] = useState(() => typeof document === 'undefined' || document.visibilityState === 'visible')
 
   useEffect(() => setWebgl(webglAvailable()), [])
+  useEffect(() => setShift(weakestShift), [weakestShift, result])
 
   useEffect(() => {
     const node = container.current
@@ -97,14 +94,15 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
+  const trial = result.representativeTrials[shift]
   const fallback = <FloorFallback result={result} shift={shift} seed={seed} />
 
   return <section id="floor" className="content-section factory-section" ref={container}>
     <div className="factory-heading-row">
       <SectionHeading
         eyebrow="THE FLOOR, RIGHT NOW"
-        title="A factory view that earns every status light."
-        body="Phase 1 establishes the spatial digital-twin shell. Andon state is already tied to simulated station risk; worker presence, line rate and queue motion remain intentionally static until representative-trial data is added."
+        title="One real simulated shift, rendered as a factory."
+        body="This view uses a representative Monte Carlo trial closest to the median staffing shortfall. Worker positions, andons and throughput are model outputs—not decorative states."
       />
       <div className="shift-selector" role="group" aria-label="Factory lighting shift">
         {(['Early','Late','Night'] as Shift[]).map(value =>
@@ -120,12 +118,16 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
     </div>
 
     <div className="factory-shell">
-      <div className="factory-shell-hud">
-        <span>SHIFT</span><strong>{shift}</strong>
+      <div className="factory-shell-hud factory-operating-hud">
+        <div><span>LINE RATE</span><strong>{trial.lineRateJPH.toFixed(1)} JPH</strong><small>target {trial.targetLineRateJPH.toFixed(1)}</small></div>
         <i/>
-        <span>PLANT SEED</span><strong>{seed}</strong>
+        <div><span>CARS LOST</span><strong>{trial.carsLostPerShift.toFixed(1)}</strong><small>{trial.shiftHours}h shift</small></div>
         <i/>
-        <span>VIEW</span><strong>{reducedMotion ? 'STATIC' : onscreen && tabVisible ? 'ACTIVE' : 'PAUSED'}</strong>
+        <div><span>SHIFT</span><strong>{shift}</strong><small>{trial.fullCoverage ? 'full coverage' : `${trial.shortfall} positions short`}</small></div>
+        <i/>
+        <div><span>REPRESENTATIVE TRIAL</span><strong>#{trial.trialIndex}</strong><small>of {trial.sampleCount.toLocaleString()}</small></div>
+        <i/>
+        <div className="hud-compact"><span>VIEW</span><strong>{reducedMotion ? 'STATIC' : onscreen && tabVisible ? 'ACTIVE' : 'PAUSED'}</strong></div>
       </div>
 
       {webgl === false ? fallback : webgl === null ? <div className="factory-loading">
@@ -144,10 +146,10 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
     </div>
 
     <div className="factory-caption">
-      <span><b className="ready"/> green · resilient</span>
-      <span><b className="watch"/> amber · watch</span>
-      <span><b className="risk"/> red · constraint</span>
-      <p>Phase 1 status mapping uses station uncover probability from the simulation. No decorative car or worker motion is enabled yet.</p>
+      <span><b className="ready"/> fully staffed</span>
+      <span><b className="watch"/> short by 1</span>
+      <span><b className="risk"/> short by 2+</span>
+      <p>Simplified bottleneck model: line rate = demand-adjusted target JPH × the weakest station throughput factor. Cars remain static until Phase 3 queue dynamics.</p>
     </div>
   </section>
 }
