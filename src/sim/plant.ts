@@ -27,7 +27,7 @@ const stations: Station[] = [
 function qualification(stationId: string, rand: () => number, core = false): Qualification {
   return {
     stationId,
-    expiresWeek: rand() < 0.60 ? 99 : 2 + Math.floor(rand() * 11),
+    expiresWeek: rand() < 0.75 ? 99 : 2 + Math.floor(rand() * 11),
     renewalRank: rand(),
     trainingRank: core ? rand() * 0.82 : rand(),
     availableWeek: 0,
