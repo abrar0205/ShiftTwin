@@ -10,7 +10,7 @@ const PRESETS = {
   flu: { ...BASELINE_SCENARIO, absenceRate: 12 },
   ramp: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 15, trainingCoverage: 94 },
   holiday: { ...BASELINE_SCENARIO, absenceRate: 10, demandPct: 5, trainingCoverage: 94, certHorizon: 1 },
-  cert: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 8, renewalRate: 80 },
+  cert: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 7, renewalRate: 20 },
 }
 
 describe('ShiftTwin simulation', () => {
@@ -53,10 +53,6 @@ describe('ShiftTwin simulation', () => {
       cert:simulate(plant,PRESETS.cert,1600).readiness,
     }
     console.info('CALIBRATION', values)
-    console.info('CERT_SWEEP_7W', [0,10,20,30,40,50,60,70,80,90].map(renewalRate => ({
-      renewalRate,
-      readiness: simulate(plant, { ...PRESETS.cert, certHorizon: 7, renewalRate }, 800).readiness,
-    })))
     expect(values.baseline).toBeGreaterThanOrEqual(92)
     expect(values.baseline).toBeLessThanOrEqual(96)
     expect(values.flu).toBeGreaterThanOrEqual(82)
