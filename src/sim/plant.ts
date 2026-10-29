@@ -82,7 +82,7 @@ export function generatePlant(seed = 20261029): Plant {
 }
 
 export const BASELINE_SCENARIO = {
-  absenceRate: 7,
+  absenceRate: 8,
   demandPct: 0,
   trainingCoverage: 96,
   certHorizon: 0,
