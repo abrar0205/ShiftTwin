@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { AnalysisPanels } from './components/AnalysisPanels'
 import { BackgroundGrid } from './components/BackgroundGrid'
 import { CommandView } from './components/CommandView'
+import { FactoryFloorSection } from './components/FactoryFloorSection'
 import { MethodPrivacy } from './components/MethodPrivacy'
 import { OptimizerPanel, Timeline } from './components/OptimizerTimeline'
 import { ScenarioStudio } from './components/ScenarioStudio'
@@ -72,7 +73,7 @@ export default function App() {
 
   const risk=result?.worst.uncoveredProbability ?? 0
   const sections=useMemo(()=>[
-    ['command','Command'],['scenario','Scenario'],['network','Network'],['analysis','Explain'],['optimizer','Optimize'],['timeline','Outlook']
+    ['command','Command'],['floor','Floor'],['scenario','Scenario'],['network','Network'],['analysis','Explain'],['optimizer','Optimize'],['timeline','Outlook']
   ],[])
 
   return <div className="app">
@@ -94,6 +95,7 @@ export default function App() {
     <main>
       {!result || !baseline ? <Loading/> : <>
         <CommandView result={result} preview={previewResult} scenario={scenario} reducedMotion={reducedMotion}/>
+        <FactoryFloorSection result={result} reducedMotion={reducedMotion}/>
         <ScenarioStudio/>
         <SkillNetwork result={result} reducedMotion={reducedMotion}/>
         <AnalysisPanels baseline={baseline} result={result}/>
