@@ -25,11 +25,17 @@ const stations: Station[] = [
 ]
 
 function qualification(stationId: string, rand: () => number, core = false): Qualification {
+  // Always consume the same four draws so expiry tuning cannot reshape
+  // the rest of the synthetic plant through RNG-stream drift.
+  const expiryRoll = rand()
+  const expiryWeekRoll = rand()
+  const renewalRank = rand()
+  const trainingRoll = rand()
   return {
     stationId,
-    expiresWeek: rand() < 0.75 ? 99 : 2 + Math.floor(rand() * 11),
-    renewalRank: rand(),
-    trainingRank: core ? rand() * 0.82 : rand(),
+    expiresWeek: expiryRoll < 0.70 ? 99 : 2 + Math.floor(expiryWeekRoll * 11),
+    renewalRank,
+    trainingRank: core ? trainingRoll * 0.82 : trainingRoll,
     availableWeek: 0,
   }
 }
