@@ -7,14 +7,15 @@ import { AnimatedNumber, GlassPanel, Icon, SectionHeading } from './ui'
 function OptionCard({ option }: { option: Intervention }) {
   const gain=option.readinessAfter-option.readinessBefore
   const tone=gain>=12?'ready':gain>=5?'watch':'neutral'
+  const gainLabel=`${gain >= 0 ? '+' : '−'}${Math.abs(gain).toFixed(1)} pts`
   return <GlassPanel className={`option-card ${option.id==='overtime'?'capped':''}`}>
     {option.capped && <div className="cap-ribbon"><Icon name="lock" size={12}/> bounded contingency</div>}
     <div className="option-icon"><Icon name={option.id==='training'?'training':option.id==='rebalance'?'swap':'clock'} /></div>
     <span className="option-kicker">{option.title}</span>
     <h3>{option.description}</h3>
-    <div className="option-score"><b>{option.readinessBefore.toFixed(0)}</b><Icon name="arrow" size={15}/><strong>{option.readinessAfter.toFixed(0)}</strong><span className={tone}>+{gain.toFixed(1)} pts</span></div>
+    <div className="option-score"><b>{option.readinessBefore.toFixed(0)}</b><Icon name="arrow" size={15}/><strong>{option.readinessAfter.toFixed(0)}</strong><span className={tone}>{gainLabel}</span></div>
     <ul>{option.actions.map(a=><li key={a}>{a}</li>)}</ul>
-    <div className="option-foot"><span>lead time</span><strong>{option.leadWeeks===0?'immediate':`${option.leadWeeks} weeks`}</strong></div>
+    <div className="option-foot"><span>verified at week {option.evaluationWeek}</span><strong>{option.leadWeeks===0?'immediate':`${option.leadWeeks} weeks lead`}</strong></div>
     {option.valuePerSlot != null && <div className="resilience-value"><span>RESILIENCE VALUE / TRAINING SLOT</span><strong>+{option.valuePerSlot.toFixed(1)} pts</strong></div>}
   </GlassPanel>
 }
@@ -46,7 +47,7 @@ export function OptimizerPanel() {
 
       <GlassPanel className="recommended-plan">
         <div className="recommended-copy">
-          <span>RECOMMENDED PLAN · {plan.evaluated} CANDIDATE EVALUATIONS</span>
+          <span>RECOMMENDED · VERIFIED WEEK {plan.recommended.evaluationWeek} · {plan.evaluated} CANDIDATE EVALUATIONS</span>
           <h3>{plan.recommended.description}</h3>
           <p>{plan.recommended.actions.join(' · ')}</p>
         </div>
