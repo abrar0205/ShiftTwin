@@ -10,7 +10,7 @@ const PRESETS = {
   flu: { ...BASELINE_SCENARIO, absenceRate: 12 },
   ramp: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 15, trainingCoverage: 94 },
   holiday: { ...BASELINE_SCENARIO, absenceRate: 10, demandPct: 5, trainingCoverage: 94, certHorizon: 1 },
-  cert: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 6, renewalRate: 35 },
+  cert: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 8, renewalRate: 30 },
 }
 
 describe('ShiftTwin simulation', () => {
