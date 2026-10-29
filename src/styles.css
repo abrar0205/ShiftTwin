@@ -427,3 +427,23 @@ footer p { margin: 0; color: var(--text-faint); font-size: 8px; text-align: righ
   html { scroll-behavior: auto; }
   *,*::before,*::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .15s !important; }
 }
+
+
+/* v1.1 credibility controls */
+.plant-seed-control {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plant-seed-control > span {
+  color: var(--text-dim);
+  font: 10px "JetBrains Mono", monospace;
+  letter-spacing: .04em;
+}
+@media (max-width: 520px) {
+  .plant-seed-control { align-items: flex-start; flex-direction: column; }
+}
