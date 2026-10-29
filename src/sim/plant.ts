@@ -24,12 +24,12 @@ const stations: Station[] = [
   { id: 'rework', name: 'Rework Support', areaId: 'quality', critical: true, baseRequired: 2 },
 ]
 
-function qualification(stationId: string, rand: () => number): Qualification {
+function qualification(stationId: string, rand: () => number, core = false): Qualification {
   return {
     stationId,
     expiresWeek: rand() < 0.60 ? 99 : 2 + Math.floor(rand() * 11),
     renewalRank: rand(),
-    trainingRank: rand(),
+    trainingRank: core ? rand() * 0.82 : rand(),
     availableWeek: 0,
   }
 }
@@ -53,8 +53,8 @@ export function generatePlant(seed = 20261029): Plant {
     const shiftWorkers: WorkerRecord[] = []
     for (let i = 0; i < 60; i++) {
       const home = generatedStations[i % generatedStations.length]
-      const qualifications: Qualification[] = [qualification(home.id, rand)]
-      const extraCount = (rand() < 0.92 ? 1 : 0) + (rand() < 0.08 ? 1 : 0)
+      const qualifications: Qualification[] = [qualification(home.id, rand, true)]
+      const extraCount = (rand() < 0.88 ? 1 : 0) + (rand() < 0.07 ? 1 : 0)
 
       for (let q = 0; q < extraCount; q++) {
         let tries = 0
@@ -71,7 +71,7 @@ export function generatePlant(seed = 20261029): Plant {
       shiftWorkers.push({
         id: id++,
         shift,
-        absenceFactor: 0.66 + beta(8, 8, rand) * 0.68,
+        absenceFactor: 0.82 + beta(8, 8, rand) * 0.76,
         qualifications,
       })
     }
