@@ -77,7 +77,7 @@ export function generatePlant(seed = 20261029): Plant {
       shiftWorkers.push({
         id: id++,
         shift,
-        absenceFactor: 0.95 + beta(8, 8, rand) * 0.80,
+        absenceFactor: 0.97 + beta(8, 8, rand) * 0.80,
         qualifications,
       })
     }
