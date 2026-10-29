@@ -16,7 +16,13 @@ worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
   else p.resolve(msg.result)
 }
 
-function request<T>(payload: Omit<WorkerRequest, 'id'>): Promise<T> {
+type WorkerRequestPayload = WorkerRequest extends infer R
+  ? R extends { id: number }
+    ? Omit<R, 'id'>
+    : never
+  : never
+
+function request<T>(payload: WorkerRequestPayload): Promise<T> {
   const id = nextId++
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
