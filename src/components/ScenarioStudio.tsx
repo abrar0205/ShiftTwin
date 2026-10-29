@@ -9,7 +9,7 @@ const presets = [
   { label: 'Flu season', values: { ...BASELINE_SCENARIO, absenceRate: 12 } },
   { label: 'Ramp-up +15%', values: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 15, trainingCoverage: 94 } },
   { label: 'Holiday week', values: { ...BASELINE_SCENARIO, absenceRate: 10, demandPct: 10, trainingCoverage: 90, certHorizon: 1 } },
-  { label: 'Cert expiry wave', values: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 4, renewalRate: 55 } },
+  { label: 'Cert expiry wave', values: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 4, renewalRate: 25 } },
 ]
 
 function Slider({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (v:number)=>void }) {
