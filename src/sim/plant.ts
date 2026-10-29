@@ -33,7 +33,7 @@ function qualification(stationId: string, rand: () => number, core = false): Qua
   const trainingRoll = rand()
   return {
     stationId,
-    expiresWeek: expiryRoll < 0.70 ? 99 : 2 + Math.floor(expiryWeekRoll * 11),
+    expiresWeek: expiryRoll < 0.60 ? 99 : 2 + Math.floor(expiryWeekRoll * 11),
     renewalRank,
     trainingRank: core ? trainingRoll * 0.82 : trainingRoll,
     availableWeek: 0,
