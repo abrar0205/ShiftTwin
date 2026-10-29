@@ -43,7 +43,7 @@ function Waterfall({ baseline, result }: { baseline: SimResult; result: SimResul
     return {from,to,delta:step.delta,label:step.label}
   })
 
-  return <svg viewBox={`0 0 ${width} ${height}`} className="waterfall" role="img" aria-label="Sequential sensitivity waterfall">
+  return <svg viewBox={`0 0 ${width} ${height}`} className="waterfall" role="img" aria-label="Shapley attribution waterfall">
     {[50,75,90,100].map(v=><g key={v}><line x1="30" x2={width-10} y1={y(v)} y2={y(v)} className="gridline"/><text x="26" y={y(v)+3} textAnchor="end">{v}</text></g>)}
     <rect x={x(0)-18} y={y(baseline.readiness)} width="36" height={y(0)-y(baseline.readiness)} rx="3" className="water-base"/>
     {bars.map((b,i)=>{
@@ -87,9 +87,9 @@ export function AnalysisPanels({ baseline, result }: { baseline: SimResult; resu
       </GlassPanel>
 
       <GlassPanel className="analysis-panel">
-        <div className="analysis-head"><span>WHY READINESS MOVED</span><strong>sequential sensitivity</strong></div>
+        <div className="analysis-head"><span>WHY READINESS MOVED</span><strong>Shapley · order-independent</strong></div>
         <Waterfall baseline={baseline} result={result}/>
-        <p>Drivers are introduced one at a time under common random numbers. This is an explanation aid, not a causal estimate.</p>
+        <p>Exact four-driver Shapley values average each driver across every ordering, using common random numbers. They explain the model delta; they are not causal estimates.</p>
       </GlassPanel>
     </div>
   </section>
