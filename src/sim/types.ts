@@ -11,6 +11,7 @@ export interface Station {
   areaId: string
   critical: boolean
   baseRequired: number
+  demandRank?: number
 }
 
 export interface Qualification {
