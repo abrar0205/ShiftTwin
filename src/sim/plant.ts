@@ -54,11 +54,11 @@ export function generatePlant(seed = 20261029): Plant {
     for (let i = 0; i < 60; i++) {
       const home = generatedStations[i % generatedStations.length]
       const qualifications: Qualification[] = [qualification(home.id, rand)]
-      const extraCount = 1 + (rand() < 0.25 ? 1 : 0)
+      const extraCount = (rand() < 0.92 ? 1 : 0) + (rand() < 0.08 ? 1 : 0)
 
       for (let q = 0; q < extraCount; q++) {
         let tries = 0
-        while (tries++ < 18) {
+        while (tries++ < 14) {
           const candidate = generatedStations[Math.floor(rand() * generatedStations.length)]
           if (qualifications.some(x => x.stationId === candidate.id)) continue
           const affinity = (stationAffinity.get(candidate.id) ?? 0.6) * (shiftAffinity.get(`${shift}|${candidate.id}`) ?? 0.85)
