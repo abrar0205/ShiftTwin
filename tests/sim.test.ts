@@ -53,9 +53,9 @@ describe('ShiftTwin simulation', () => {
       cert:simulate(plant,PRESETS.cert,1600).readiness,
     }
     console.info('CALIBRATION', values)
-    console.info('CERT_SWEEP', [70,72,74,76,78,80,82,85].map(renewalRate => ({
+    console.info('CERT_SWEEP_7W', [0,10,20,30,40,50,60,70,80,90].map(renewalRate => ({
       renewalRate,
-      readiness: simulate(plant, { ...PRESETS.cert, renewalRate }, 800).readiness,
+      readiness: simulate(plant, { ...PRESETS.cert, certHorizon: 7, renewalRate }, 800).readiness,
     })))
     expect(values.baseline).toBeGreaterThanOrEqual(92)
     expect(values.baseline).toBeLessThanOrEqual(96)
