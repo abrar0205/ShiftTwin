@@ -88,7 +88,11 @@ export function activeStationIds(worker: WorkerRecord, scenario: Scenario) {
 }
 
 export function requirementFor(station: Station, scenario: Scenario) {
-  return Math.max(1, Math.ceil(station.baseRequired * (1 + scenario.demandPct / 100)))
+  const exactExtra = station.baseRequired * scenario.demandPct / 100
+  const wholeExtra = Math.floor(exactExtra)
+  const fractionalExtra = exactExtra - wholeExtra
+  const seededRemainder = (station.demandRank ?? 0.5) < fractionalExtra ? 1 : 0
+  return Math.max(1, station.baseRequired + wholeExtra + seededRemainder)
 }
 
 export function isPresent(plant: Plant, worker: WorkerRecord, sample: number, workerIndex: number, scenario: Scenario) {
