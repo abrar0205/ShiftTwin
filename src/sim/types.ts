@@ -73,6 +73,42 @@ export interface AttributionStep {
   delta: number
 }
 
+export interface TrialWorkerState {
+  slot: number
+  present: boolean
+  assignedStationId?: string
+  eligibleStationIds: string[]
+  lapsedStationIds: string[]
+}
+
+export interface TrialStationState {
+  stationId: string
+  stationName: string
+  required: number
+  assigned: number
+  assignedWorkerSlots: number[]
+  lapsedPresentWorkerSlots: number[]
+  deficit: number
+  throughputFactor: number
+  status: 'staffed' | 'short' | 'uncovered'
+}
+
+export interface RepresentativeTrial {
+  shift: Shift
+  trialIndex: number
+  sampleCount: number
+  selection: 'median-shortfall'
+  medianShortfall: number
+  shortfall: number
+  fullCoverage: boolean
+  workers: TrialWorkerState[]
+  stations: TrialStationState[]
+  targetLineRateJPH: number
+  lineRateJPH: number
+  carsLostPerShift: number
+  shiftHours: number
+}
+
 export interface SimResult {
   samples: number
   readiness: number
@@ -84,6 +120,7 @@ export interface SimResult {
   worst: StationRisk
   criticalSkillCoverage: number
   attribution: AttributionStep[]
+  representativeTrials: Record<Shift, RepresentativeTrial>
 }
 
 export interface Intervention {

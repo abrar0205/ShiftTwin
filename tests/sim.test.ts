@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generatePlant, BASELINE_SCENARIO } from '../src/sim/plant'
-import { shapleyAttribution, simulate } from '../src/sim/montecarlo'
+import { BASE_LINE_RATE_JPH, SHIFT_HOURS, shapleyAttribution, simulate } from '../src/sim/montecarlo'
 import { activeStationIds, solveShiftCoverage } from '../src/sim/coverage'
 import { optimize } from '../src/sim/optimizer'
 import type { Plant, Station, WorkerRecord } from '../src/sim/types'
@@ -18,7 +18,7 @@ describe('ShiftTwin simulation', () => {
     expect(generatePlant(42)).toEqual(generatePlant(42))
   })
 
-  it('respects one-worker-per-station matching capacity', () => {
+  it('respects one-worker-per-station matching capacity and exposes assignments', () => {
     const stations: Station[] = [
       { id:'a', name:'A', areaId:'x', critical:true, baseRequired:1 },
       { id:'b', name:'B', areaId:'x', critical:true, baseRequired:1 },
@@ -30,9 +30,11 @@ describe('ShiftTwin simulation', () => {
         {stationId:'b',expiresWeek:99,renewalRank:0,trainingRank:0,availableWeek:0},
       ],
     }
-    const result=solveShiftCoverage(stations,[{worker,eligible:['a','b']}],{...BASELINE_SCENARIO})
+    const result=solveShiftCoverage(stations,[{worker,eligible:['a','b'],slot:7}],{...BASELINE_SCENARIO})
     expect(result.full).toBe(false)
     expect(result.uncoveredStationIds).toHaveLength(1)
+    const assigned=[...result.assignments.a,...result.assignments.b]
+    expect(assigned).toEqual([7])
   })
 
   it('is deterministic under common random numbers', () => {
@@ -41,6 +43,7 @@ describe('ShiftTwin simulation', () => {
     const b=simulate(plant,{...BASELINE_SCENARIO,absenceRate:9,demandPct:10},240)
     expect(a.readiness).toBe(b.readiness)
     expect(a.worst.stationId).toBe(b.worst.stationId)
+    expect(a.representativeTrials.Night).toEqual(b.representativeTrials.Night)
   })
 
   it('keeps the reference scenarios in calibrated operating ranges', () => {
@@ -63,6 +66,33 @@ describe('ShiftTwin simulation', () => {
     expect(values.holiday).toBeLessThanOrEqual(78)
     expect(values.cert).toBeGreaterThanOrEqual(64)
     expect(values.cert).toBeLessThanOrEqual(78)
+  })
+
+  it('builds a representative median-shortfall trial with unique anonymous assignments', () => {
+    const plant=generatePlant(20261029)
+    const result=simulate(plant,PRESETS.holiday,900)
+    for (const shift of ['Early','Late','Night'] as const) {
+      const trial=result.representativeTrials[shift]
+      expect(trial.trialIndex).toBeGreaterThanOrEqual(1)
+      expect(trial.trialIndex).toBeLessThanOrEqual(result.samples)
+      expect(trial.selection).toBe('median-shortfall')
+      expect(trial.shortfall).toBe(trial.medianShortfall)
+      const assigned=trial.stations.flatMap(station=>station.assignedWorkerSlots)
+      expect(new Set(assigned).size).toBe(assigned.length)
+      expect(trial.stations.every(station=>station.assigned + station.deficit === station.required)).toBe(true)
+    }
+  })
+
+  it('derives throughput and cars lost from representative assignment deficits', () => {
+    const plant=generatePlant(20261029)
+    const scenario={...PRESETS.ramp,absenceRate:14}
+    const result=simulate(plant,scenario,900)
+    const trial=result.representativeTrials.Night
+    const bottleneck=Math.min(...trial.stations.map(station=>station.throughputFactor))
+    const target=BASE_LINE_RATE_JPH*(1+scenario.demandPct/100)
+    expect(trial.targetLineRateJPH).toBeCloseTo(target,8)
+    expect(trial.lineRateJPH).toBeCloseTo(target*bottleneck,8)
+    expect(trial.carsLostPerShift).toBeCloseTo((target-trial.lineRateJPH)*SHIFT_HOURS,8)
   })
 
   it('produces order-independent Shapley attribution that sums to the displayed change', () => {

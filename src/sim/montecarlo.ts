@@ -1,9 +1,39 @@
-import { activeStationIds, isPresent, qualifiedPool, requirementFor, solveShiftCoverage } from './coverage'
-import type { AttributionStep, Plant, Scenario, Shift, SimResult, StationRisk, TimelinePoint } from './types'
+import { activeStationIds, isPresent, lapsedStationIds, qualifiedPool, requirementFor, solveShiftCoverage } from './coverage'
+import type {
+  AttributionStep,
+  Plant,
+  RepresentativeTrial,
+  Scenario,
+  Shift,
+  SimResult,
+  StationRisk,
+  TimelinePoint,
+  TrialWorkerState,
+} from './types'
 
 const SHIFTS: Shift[] = ['Early', 'Late', 'Night']
 const z80 = 1.2815515655446004
 const ATTRIBUTION_SAMPLES = 700
+export const BASE_LINE_RATE_JPH = 60
+export const SHIFT_HOURS = 8
+
+function emptyRepresentative(shift: Shift, samples: number): RepresentativeTrial {
+  return {
+    shift,
+    trialIndex: 0,
+    sampleCount: samples,
+    selection: 'median-shortfall',
+    medianShortfall: 0,
+    shortfall: 0,
+    fullCoverage: false,
+    workers: [],
+    stations: [],
+    targetLineRateJPH: BASE_LINE_RATE_JPH,
+    lineRateJPH: 0,
+    carsLostPerShift: BASE_LINE_RATE_JPH * SHIFT_HOURS,
+    shiftHours: SHIFT_HOURS,
+  }
+}
 
 function emptyResult(plant: Plant, scenario: Scenario, samples: number): SimResult {
   const station = plant.stations[0]
@@ -11,22 +41,135 @@ function emptyResult(plant: Plant, scenario: Scenario, samples: number): SimResu
     stationId: station.id, stationName: station.name, areaId: station.areaId, shift: 'Early',
     required: requirementFor(station, scenario), qualifiedPool: 0, uncoveredProbability: 0, failureShare: 0,
   }
-  return { samples, readiness: 0, p10: 0, p90: 0, shiftResults: [], stationRisks: [fallback], histogram: [], worst: fallback, criticalSkillCoverage: 0, attribution: [] }
+  return {
+    samples,
+    readiness: 0,
+    p10: 0,
+    p90: 0,
+    shiftResults: [],
+    stationRisks: [fallback],
+    histogram: [],
+    worst: fallback,
+    criticalSkillCoverage: 0,
+    attribution: [],
+    representativeTrials: {
+      Early: emptyRepresentative('Early', samples),
+      Late: emptyRepresentative('Late', samples),
+      Night: emptyRepresentative('Night', samples),
+    },
+  }
+}
+
+function medianShortfall(values: number[]) {
+  const sorted = [...values].sort((a,b) => a-b)
+  return sorted[Math.floor(sorted.length / 2)] ?? 0
+}
+
+function buildRepresentativeTrial(
+  plant: Plant,
+  scenario: Scenario,
+  shift: Shift,
+  sample: number,
+  samples: number,
+  median: number,
+): RepresentativeTrial {
+  const shiftEntries = plant.workers
+    .map((worker, globalIndex) => ({ worker, globalIndex }))
+    .filter(entry => entry.worker.shift === shift)
+    .map((entry, shiftIndex) => ({
+      ...entry,
+      slot: shiftIndex + 1,
+      eligible: activeStationIds(entry.worker, scenario),
+      lapsed: lapsedStationIds(entry.worker, scenario),
+    }))
+
+  const presentEntries = shiftEntries.filter(entry =>
+    isPresent(plant, entry.worker, sample, entry.globalIndex, scenario)
+  )
+
+  const solved = solveShiftCoverage(
+    plant.stations,
+    presentEntries
+      .filter(entry => entry.eligible.length > 0)
+      .map(entry => ({ worker: entry.worker, eligible: entry.eligible, slot: entry.slot })),
+    scenario,
+  )
+
+  const assignedStationBySlot = new Map<number, string>()
+  for (const station of plant.stations) {
+    for (const slot of solved.assignments[station.id] ?? []) assignedStationBySlot.set(slot, station.id)
+  }
+
+  const workers: TrialWorkerState[] = shiftEntries.map(entry => ({
+    slot: entry.slot,
+    present: presentEntries.some(p => p.slot === entry.slot),
+    assignedStationId: assignedStationBySlot.get(entry.slot),
+    eligibleStationIds: entry.eligible,
+    lapsedStationIds: entry.lapsed,
+  }))
+
+  const stations = plant.stations.map(station => {
+    const required = requirementFor(station, scenario)
+    const assignedWorkerSlots = solved.assignments[station.id] ?? []
+    const assigned = assignedWorkerSlots.length
+    const deficit = Math.max(0, required - assigned)
+    const throughputFactor = required > 0 ? Math.min(1, assigned / required) : 1
+    const lapsedPresentWorkerSlots = presentEntries
+      .filter(entry => entry.lapsed.includes(station.id) && !assignedStationBySlot.has(entry.slot))
+      .map(entry => entry.slot)
+    return {
+      stationId: station.id,
+      stationName: station.name,
+      required,
+      assigned,
+      assignedWorkerSlots,
+      lapsedPresentWorkerSlots,
+      deficit,
+      throughputFactor,
+      status: deficit === 0 ? 'staffed' as const : deficit === 1 ? 'short' as const : 'uncovered' as const,
+    }
+  })
+
+  const shortfall = stations.reduce((sum, station) => sum + station.deficit, 0)
+  const bottleneckFactor = Math.min(...stations.map(station => station.throughputFactor))
+  const targetLineRateJPH = BASE_LINE_RATE_JPH * (1 + scenario.demandPct / 100)
+  const lineRateJPH = targetLineRateJPH * bottleneckFactor
+  const carsLostPerShift = Math.max(0, (targetLineRateJPH - lineRateJPH) * SHIFT_HOURS)
+
+  return {
+    shift,
+    trialIndex: sample + 1,
+    sampleCount: samples,
+    selection: 'median-shortfall',
+    medianShortfall: median,
+    shortfall,
+    fullCoverage: solved.full,
+    workers,
+    stations,
+    targetLineRateJPH,
+    lineRateJPH,
+    carsLostPerShift,
+    shiftHours: SHIFT_HOURS,
+  }
 }
 
 export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimResult {
   if (samples <= 0) return emptyResult(plant, scenario, samples)
 
-  const workersByShift = new Map<Shift, Array<{ worker: typeof plant.workers[number]; index: number; eligible: string[] }>>()
+  const workersByShift = new Map<Shift, Array<{ worker: typeof plant.workers[number]; index: number; slot: number; eligible: string[] }>>()
   for (const shift of SHIFTS) workersByShift.set(shift, [])
-  plant.workers.forEach((worker, index) => {
-    const eligible = activeStationIds(worker, scenario)
-    workersByShift.get(worker.shift)!.push({ worker, index, eligible })
-  })
+  for (const shift of SHIFTS) {
+    let slot = 1
+    plant.workers.forEach((worker, index) => {
+      if (worker.shift !== shift) return
+      workersByShift.get(shift)!.push({ worker, index, slot: slot++, eligible: activeStationIds(worker, scenario) })
+    })
+  }
 
   let plantFull = 0
   const shiftFull: Record<Shift, number> = { Early: 0, Late: 0, Night: 0 }
   const shiftUncoveredSum: Record<Shift, number> = { Early: 0, Late: 0, Night: 0 }
+  const shortfalls: Record<Shift, number[]> = { Early: [], Late: [], Night: [] }
   const stationUncovered = new Map<string, number>()
   const firstFailure = new Map<string, number>()
   const histogram = new Map<number, number>()
@@ -38,7 +181,7 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
     for (const shift of SHIFTS) {
       const present = workersByShift.get(shift)!
         .filter(x => x.eligible.length > 0 && isPresent(plant, x.worker, sample, x.index, scenario))
-        .map(x => ({ worker: x.worker, eligible: x.eligible }))
+        .map(x => ({ worker: x.worker, eligible: x.eligible, slot: x.slot }))
 
       const solved = solveShiftCoverage(plant.stations, present, scenario)
       if (solved.full) shiftFull[shift]++
@@ -46,6 +189,7 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
 
       totalUncovered += solved.uncoveredStationIds.length
       shiftUncoveredSum[shift] += solved.uncoveredStationIds.length
+      shortfalls[shift].push(Object.values(solved.deficits).reduce((sum, value) => sum + value, 0))
 
       let firstKey: string | null = null
       let largestDeficit = -1
@@ -92,6 +236,20 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
   stationRisks.sort((a, b) => b.uncoveredProbability - a.uncoveredProbability || b.failureShare - a.failureShare)
   const worst = stationRisks[0]
 
+  const representativeTrials = Object.fromEntries(SHIFTS.map(shift => {
+    const median = medianShortfall(shortfalls[shift])
+    let chosenSample = 0
+    let bestDistance = Infinity
+    for (let sample = 0; sample < shortfalls[shift].length; sample++) {
+      const distance = Math.abs(shortfalls[shift][sample] - median)
+      if (distance < bestDistance) {
+        bestDistance = distance
+        chosenSample = sample
+      }
+    }
+    return [shift, buildRepresentativeTrial(plant, scenario, shift, chosenSample, samples, median)]
+  })) as Record<Shift, RepresentativeTrial>
+
   return {
     samples,
     readiness,
@@ -107,6 +265,7 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
     worst,
     criticalSkillCoverage: 100 - stationRisks.reduce((s, r) => s + r.uncoveredProbability, 0) / stationRisks.length,
     attribution: [],
+    representativeTrials,
   }
 }
 

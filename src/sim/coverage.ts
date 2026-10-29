@@ -7,6 +7,12 @@ interface Edge {
   cap: number
 }
 
+interface WorkerCoverageInput {
+  worker: WorkerRecord
+  eligible: string[]
+  slot?: number
+}
+
 class Dinic {
   private g: Edge[][]
   private level: number[]
@@ -87,6 +93,20 @@ export function activeStationIds(worker: WorkerRecord, scenario: Scenario) {
     .map(q => q.stationId)
 }
 
+export function lapsedStationIds(worker: WorkerRecord, scenario: Scenario) {
+  const trainingCut = scenario.trainingCoverage / 100
+  const certCut = Math.max(scenario.week, scenario.certHorizon)
+  const renewalCut = scenario.renewalRate / 100
+  return worker.qualifications
+    .filter(q =>
+      q.trainingRank <= trainingCut &&
+      q.availableWeek <= scenario.week &&
+      q.expiresWeek <= certCut &&
+      q.renewalRank > renewalCut
+    )
+    .map(q => q.stationId)
+}
+
 export function requirementFor(station: Station, scenario: Scenario) {
   const exactExtra = station.baseRequired * scenario.demandPct / 100
   const wholeExtra = Math.floor(exactExtra)
@@ -104,11 +124,12 @@ export interface CoverageResult {
   full: boolean
   uncoveredStationIds: string[]
   deficits: Record<string, number>
+  assignments: Record<string, number[]>
 }
 
 export function solveShiftCoverage(
   stations: Station[],
-  workers: Array<{ worker: WorkerRecord; eligible: string[] }>,
+  workers: WorkerCoverageInput[],
   scenario: Scenario,
 ): CoverageResult {
   const source = 0
@@ -117,13 +138,17 @@ export function solveShiftCoverage(
   const sink = stationStart + stations.length
   const dinic = new Dinic(sink + 1)
   const stationEdges: Edge[] = []
+  const assignmentEdges: Array<{ stationId: string; slot: number; edge: Edge }> = []
 
   workers.forEach((entry, wi) => {
     const wn = workerStart + wi
     dinic.addEdge(source, wn, 1)
     for (const sid of entry.eligible) {
       const si = stations.findIndex(s => s.id === sid)
-      if (si >= 0) dinic.addEdge(wn, stationStart + si, 1)
+      if (si >= 0) {
+        const edge = dinic.addEdge(wn, stationStart + si, 1)
+        assignmentEdges.push({ stationId: sid, slot: entry.slot ?? entry.worker.id, edge })
+      }
     }
   })
 
@@ -137,13 +162,20 @@ export function solveShiftCoverage(
   const flow = dinic.maxFlow(source, sink)
   const deficits: Record<string, number> = {}
   const uncoveredStationIds: string[] = []
+  const assignments: Record<string, number[]> = Object.fromEntries(stations.map(s => [s.id, []]))
+
   stations.forEach((s, i) => {
     const deficit = stationEdges[i].cap
     deficits[s.id] = deficit
     if (deficit > 0) uncoveredStationIds.push(s.id)
   })
 
-  return { full: flow === totalRequired, uncoveredStationIds, deficits }
+  for (const link of assignmentEdges) {
+    if (link.edge.cap === 0) assignments[link.stationId].push(link.slot)
+  }
+  for (const station of stations) assignments[station.id].sort((a,b) => a-b)
+
+  return { full: flow === totalRequired, uncoveredStationIds, deficits, assignments }
 }
 
 export function qualifiedPool(plant: Plant, stationId: string, shift: Shift, scenario: Scenario) {
