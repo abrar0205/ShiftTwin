@@ -24,19 +24,11 @@ const stations: Station[] = [
   { id: 'rework', name: 'Rework Support', areaId: 'quality', critical: true, baseRequired: 2 },
 ]
 
-function expiry(rand: () => number, stationId: string, shift: Shift, homeIndex: number) {
-  if (stationId === 'process-b' && shift === 'Night' && (homeIndex === 5 || homeIndex === 17)) {
-    return homeIndex === 5 ? 3 : 4
-  }
-  const u = rand()
-  if (u < 0.58) return 99
-  return 2 + Math.floor(rand() * 11)
-}
-
-function qualification(stationId: string, shift: Shift, homeIndex: number, rand: () => number): Qualification {
+function qualification(stationId: string, rand: () => number): Qualification {
   return {
     stationId,
-    expiresWeek: expiry(rand, stationId, shift, homeIndex),
+    expiresWeek: rand() < 0.60 ? 99 : 2 + Math.floor(rand() * 11),
+    renewalRank: rand(),
     trainingRank: rand(),
     availableWeek: 0,
   }
@@ -47,23 +39,30 @@ export function generatePlant(seed = 20261029): Plant {
   const workers: WorkerRecord[] = []
   let id = 1
 
+  // Scarcity is generated from the seed, never attached to a named station.
+  const stationAffinity = new Map(stations.map(station => [station.id, 0.38 + rand() * 0.50]))
+  const shiftAffinity = new Map<string, number>()
+  for (const shift of shifts) {
+    for (const station of stations) {
+      shiftAffinity.set(`${shift}|${station.id}`, 0.72 + rand() * 0.28)
+    }
+  }
+
   for (const shift of shifts) {
     const shiftWorkers: WorkerRecord[] = []
     for (let i = 0; i < 60; i++) {
       const home = stations[i % stations.length]
-      const qualifications: Qualification[] = [qualification(home.id, shift, i, rand)]
-      const extraCount = 1 + Math.floor(rand() * 3)
+      const qualifications: Qualification[] = [qualification(home.id, rand)]
+      const extraCount = 1 + (rand() < 0.52 ? 1 : 0) + (rand() < 0.16 ? 1 : 0)
 
       for (let q = 0; q < extraCount; q++) {
         let tries = 0
-        while (tries++ < 20) {
+        while (tries++ < 28) {
           const candidate = stations[Math.floor(rand() * stations.length)]
           if (qualifications.some(x => x.stationId === candidate.id)) continue
-          const scarcePenalty = candidate.id === 'process-b'
-            ? shift === 'Night' ? 0.08 : 0.32
-            : candidate.id === 'quality-gate' && shift === 'Night' ? 0.45 : 1
-          if (rand() > scarcePenalty) continue
-          qualifications.push(qualification(candidate.id, shift, i, rand))
+          const affinity = (stationAffinity.get(candidate.id) ?? 0.6) * (shiftAffinity.get(`${shift}|${candidate.id}`) ?? 0.85)
+          if (rand() > affinity) continue
+          qualifications.push(qualification(candidate.id, rand))
           break
         }
       }
@@ -71,26 +70,10 @@ export function generatePlant(seed = 20261029): Plant {
       shiftWorkers.push({
         id: id++,
         shift,
-        absenceFactor: 0.72 + beta(8, 8, rand) * 0.56,
+        absenceFactor: 0.66 + beta(8, 8, rand) * 0.68,
         qualifications,
       })
     }
-
-    const processBExtras = shift === 'Early' ? 4 : shift === 'Late' ? 3 : 2
-    let added = 0
-    for (const w of shiftWorkers) {
-      if (added >= processBExtras) break
-      if (!w.qualifications.some(q => q.stationId === 'process-b')) {
-        w.qualifications.push({
-          stationId: 'process-b',
-          expiresWeek: shift === 'Night' && added < 2 ? 4 + added : 99,
-          trainingRank: 0.35 + rand() * 0.35,
-          availableWeek: 0,
-        })
-        added++
-      }
-    }
-
     workers.push(...shiftWorkers)
   }
 
@@ -102,5 +85,6 @@ export const BASELINE_SCENARIO = {
   demandPct: 0,
   trainingCoverage: 96,
   certHorizon: 0,
+  renewalRate: 85,
   week: 0,
 } as const

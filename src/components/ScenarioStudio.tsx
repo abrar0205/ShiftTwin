@@ -6,16 +6,16 @@ import { GlassPanel, Icon, SectionHeading } from './ui'
 
 const presets = [
   { label: 'Baseline', values: { ...BASELINE_SCENARIO } },
-  { label: 'Flu season', values: { absenceRate: 12, demandPct: 0, trainingCoverage: 96, certHorizon: 0, week: 0 } },
-  { label: 'Ramp-up +15%', values: { absenceRate: 7, demandPct: 15, trainingCoverage: 94, certHorizon: 0, week: 0 } },
-  { label: 'Holiday week', values: { absenceRate: 10, demandPct: 10, trainingCoverage: 90, certHorizon: 1, week: 0 } },
-  { label: 'Cert expiry wave', values: { absenceRate: 7, demandPct: 5, trainingCoverage: 96, certHorizon: 4, week: 0 } },
+  { label: 'Flu season', values: { ...BASELINE_SCENARIO, absenceRate: 12 } },
+  { label: 'Ramp-up +15%', values: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 15, trainingCoverage: 94 } },
+  { label: 'Holiday week', values: { ...BASELINE_SCENARIO, absenceRate: 10, demandPct: 10, trainingCoverage: 90, certHorizon: 1 } },
+  { label: 'Cert expiry wave', values: { ...BASELINE_SCENARIO, absenceRate: 7, demandPct: 5, certHorizon: 4, renewalRate: 55 } },
 ]
 
-function Slider({ label, value, min, max, step, suffix, inverse = false, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; inverse?: boolean; onChange: (v:number)=>void }) {
+function Slider({ label, value, min, max, step, suffix, onChange }: { label: string; value: number; min: number; max: number; step: number; suffix: string; onChange: (v:number)=>void }) {
   const pct = (value-min)/(max-min)*100
   return <label className="scenario-slider">
-    <div className="slider-head"><span>{label}</span><output>{inverse ? value : value}{suffix}</output></div>
+    <div className="slider-head"><span>{label}</span><output>{value}{suffix}</output></div>
     <input
       type="range"
       min={min}
@@ -59,6 +59,7 @@ export function ScenarioStudio() {
         <Slider label="Production demand" value={scenario.demandPct} min={0} max={30} step={1} suffix="%" onChange={v=>update({demandPct:v})} />
         <Slider label="Training coverage" value={scenario.trainingCoverage} min={60} max={100} step={1} suffix="%" onChange={v=>update({trainingCoverage:v})} />
         <Slider label="Certification horizon" value={scenario.certHorizon} min={0} max={8} step={1} suffix=" wk" onChange={v=>update({certHorizon:v})} />
+        <Slider label="Certification renewal rate" value={scenario.renewalRate} min={40} max={100} step={5} suffix="%" onChange={v=>update({renewalRate:v})} />
       </div>
 
       <div className="scenario-actions">

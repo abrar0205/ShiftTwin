@@ -77,8 +77,13 @@ class Dinic {
 export function activeStationIds(worker: WorkerRecord, scenario: Scenario) {
   const trainingCut = scenario.trainingCoverage / 100
   const certCut = Math.max(scenario.week, scenario.certHorizon)
+  const renewalCut = scenario.renewalRate / 100
   return worker.qualifications
-    .filter(q => q.trainingRank <= trainingCut && q.availableWeek <= scenario.week && q.expiresWeek > certCut)
+    .filter(q => {
+      if (q.trainingRank > trainingCut || q.availableWeek > scenario.week) return false
+      if (q.expiresWeek > certCut) return true
+      return q.renewalRank <= renewalCut
+    })
     .map(q => q.stationId)
 }
 

@@ -16,6 +16,7 @@ export interface Station {
 export interface Qualification {
   stationId: string
   expiresWeek: number
+  renewalRank: number
   trainingRank: number
   availableWeek: number
 }
@@ -39,6 +40,7 @@ export interface Scenario {
   demandPct: number
   trainingCoverage: number
   certHorizon: number
+  renewalRate: number
   week: number
 }
 
@@ -90,6 +92,7 @@ export interface Intervention {
   readinessBefore: number
   readinessAfter: number
   leadWeeks: number
+  evaluationWeek: number
   actions: string[]
   capped?: boolean
   valuePerSlot?: number

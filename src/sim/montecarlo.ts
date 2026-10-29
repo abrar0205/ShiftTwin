@@ -3,6 +3,7 @@ import type { AttributionStep, Plant, Scenario, Shift, SimResult, StationRisk, T
 
 const SHIFTS: Shift[] = ['Early', 'Late', 'Night']
 const z80 = 1.2815515655446004
+const ATTRIBUTION_SAMPLES = 700
 
 function emptyResult(plant: Plant, scenario: Scenario, samples: number): SimResult {
   const station = plant.stations[0]
@@ -109,30 +110,57 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
   }
 }
 
-export function withAttribution(plant: Plant, baseline: Scenario, scenario: Scenario, result: SimResult): SimResult {
-  const keys: Array<{ key: AttributionStep['key']; label: string; apply: (s: Scenario) => Scenario }> = [
-    { key: 'absence', label: 'Absence', apply: s => ({ ...s, absenceRate: scenario.absenceRate }) },
-    { key: 'demand', label: 'Demand', apply: s => ({ ...s, demandPct: scenario.demandPct }) },
-    { key: 'training', label: 'Training', apply: s => ({ ...s, trainingCoverage: scenario.trainingCoverage }) },
-    { key: 'certification', label: 'Cert expiry', apply: s => ({ ...s, certHorizon: scenario.certHorizon }) },
-  ]
+const DRIVERS: Array<{ key: AttributionStep['key']; label: string; apply: (base: Scenario, target: Scenario) => Scenario }> = [
+  { key: 'absence', label: 'Absence', apply: (base, target) => ({ ...base, absenceRate: target.absenceRate }) },
+  { key: 'demand', label: 'Demand', apply: (base, target) => ({ ...base, demandPct: target.demandPct }) },
+  { key: 'training', label: 'Training', apply: (base, target) => ({ ...base, trainingCoverage: target.trainingCoverage }) },
+  { key: 'certification', label: 'Certification', apply: (base, target) => ({ ...base, certHorizon: target.certHorizon, renewalRate: target.renewalRate }) },
+]
 
-  const samples = 700
-  let current = { ...baseline, week: scenario.week }
-  let previous = simulate(plant, current, samples).readiness
-  const raw: AttributionStep[] = []
-  for (const step of keys) {
-    current = step.apply(current)
-    const next = simulate(plant, current, samples).readiness
-    raw.push({ key: step.key, label: step.label, delta: next - previous })
-    previous = next
+function factorial(n: number) {
+  let value = 1
+  for (let i = 2; i <= n; i++) value *= i
+  return value
+}
+
+function scenarioForMask(base: Scenario, target: Scenario, mask: number) {
+  let scenario = { ...base, week: target.week }
+  DRIVERS.forEach((driver, index) => {
+    if (mask & (1 << index)) scenario = driver.apply(scenario, target)
+  })
+  return scenario
+}
+
+export function shapleyAttribution(plant: Plant, baseline: Scenario, scenario: Scenario, displayedResult?: SimResult): AttributionStep[] {
+  const n = DRIVERS.length
+  const values = new Map<number, number>()
+  for (let mask = 0; mask < (1 << n); mask++) {
+    values.set(mask, simulate(plant, scenarioForMask(baseline, scenario, mask), ATTRIBUTION_SAMPLES).readiness)
   }
 
-  const fullBaseline = simulate(plant, { ...baseline, week: scenario.week }, samples).readiness
-  const fullDelta = result.readiness - fullBaseline
-  const rawSum = raw.reduce((s, x) => s + x.delta, 0)
-  const scale = Math.abs(rawSum) > 0.001 ? fullDelta / rawSum : 0
-  return { ...result, attribution: raw.map(x => ({ ...x, delta: x.delta * scale })) }
+  const raw = DRIVERS.map((driver, i) => {
+    let phi = 0
+    for (let mask = 0; mask < (1 << n); mask++) {
+      if (mask & (1 << i)) continue
+      const size = DRIVERS.reduce((count, _d, j) => count + ((mask & (1 << j)) ? 1 : 0), 0)
+      const weight = factorial(size) * factorial(n - size - 1) / factorial(n)
+      phi += weight * ((values.get(mask | (1 << i)) ?? 0) - (values.get(mask) ?? 0))
+    }
+    return { key: driver.key, label: driver.label, delta: phi }
+  })
+
+  if (!displayedResult) return raw
+
+  const baseDisplayed = simulate(plant, { ...baseline, week: scenario.week }, displayedResult.samples).readiness
+  const desiredDelta = displayedResult.readiness - baseDisplayed
+  const rawDelta = raw.reduce((sum, step) => sum + step.delta, 0)
+  if (Math.abs(rawDelta) < 1e-9) return raw.map(step => ({ ...step, delta: 0 }))
+  const scale = desiredDelta / rawDelta
+  return raw.map(step => ({ ...step, delta: step.delta * scale }))
+}
+
+export function withAttribution(plant: Plant, baseline: Scenario, scenario: Scenario, result: SimResult): SimResult {
+  return { ...result, attribution: shapleyAttribution(plant, baseline, scenario, result) }
 }
 
 export function buildTimeline(plant: Plant, scenario: Scenario, samples = 600): TimelinePoint[] {
