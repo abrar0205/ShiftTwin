@@ -44,7 +44,6 @@ function DriverTile({ label, value, unit, delta, status }: { label: string; valu
   return <GlassPanel className="driver-tile">
     <span className="driver-label">{label}</span>
     <div className="driver-value">{value}<small>{unit}</small></div>
-    <div className="driver-spark" aria-hidden="true"><i/><i/><i/><i/><i/><i/></div>
     {delta && <span className={`driver-delta ${status ?? ''}`}>{delta}</span>}
   </GlassPanel>
 }
@@ -57,8 +56,8 @@ export function CommandView({ result, preview, scenario, reducedMotion }: { resu
   return <section id="command" className="command-section">
     <div className="command-copy">
       <span className="eyebrow">WORKFORCE RESILIENCE SIMULATOR</span>
-      <h1>Simulate workforce changes before they become <em>production constraints.</em></h1>
-      <p>ShiftTwin estimates the probability that every critical station can be covered by a qualified person, then tests interventions against the same synthetic plant.</p>
+      <h1>See the bottleneck. <em>Protect the shift.</em></h1>
+      <p>Explore a living production floor, simulate staffing shortages, and test which interventions restore throughput. Every result comes from the same synthetic workforce model.</p>
     </div>
 
     <div className="command-grid">

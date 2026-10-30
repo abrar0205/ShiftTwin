@@ -1491,7 +1491,7 @@ function CameraDirector({
   const desiredPosition=useMemo(()=>new THREE.Vector3(),[])
   const desiredTarget=useMemo(()=>new THREE.Vector3(),[])
 
-  useFrame(()=>{
+  useFrame((_state,delta)=>{
     const controls=controlsRef.current
     const seq=sequenceRef.current
 
@@ -1524,11 +1524,14 @@ function CameraDirector({
 
     desiredPosition.copy(widePosition).lerp(focusPosition,focusBlend)
     desiredTarget.copy(wideTarget).lerp(focusTarget,focusBlend)
-    camera.position.lerp(desiredPosition,.12)
+    // Exponential damping is independent of display refresh rate.
+    const cameraAlpha=1-Math.exp(-7.7*delta)
+    const targetAlpha=1-Math.exp(-9.1*delta)
+    camera.position.lerp(desiredPosition,cameraAlpha)
 
     if(controls){
       controls.enabled=false
-      controls.target.lerp(desiredTarget,.14)
+      controls.target.lerp(desiredTarget,targetAlpha)
       controls.update()
     }else{
       camera.lookAt(desiredTarget)
@@ -1750,7 +1753,7 @@ export default function FactoryFloorScene({
     shadows
     dpr={[1,1.5]}
     frameloop={!active?'never':reducedMotion?'demand':'always'}
-    camera={{position:[24,18,24],fov:30,near:.1,far:100}}
+    camera={{position:[24,18,24],fov:typeof window!=='undefined' && window.matchMedia('(max-width: 820px)').matches ? 42 : 30,near:.1,far:100}}
     gl={{antialias:true,powerPreference:'high-performance'}}
     onCreated={({gl})=>{
       gl.toneMapping=THREE.AgXToneMapping
