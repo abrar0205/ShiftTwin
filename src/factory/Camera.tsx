@@ -1,6 +1,7 @@
 import { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
+import * as THREE from 'three'
 import { stationPosition } from './layout'
 import { HEAL_SEQUENCE, RUN_SEQUENCE, SHOTS, type ShotName } from './shots'
 
@@ -24,8 +25,10 @@ export function FactoryCamera({focusIndex,mode,reducedMotion}:{focusIndex:number
     const ox=shot.offset[0]*(portrait?1.18:1)
     const oy=shot.offset[1]*scale
     const oz=shot.offset[2]*scale
-    camera.fov=portrait?Math.max(shot.fov,36):shot.fov
-    camera.updateProjectionMatrix()
+    if(camera instanceof THREE.PerspectiveCamera){
+      camera.fov=portrait ? Math.max(shot.fov,36) : shot.fov
+      camera.updateProjectionMatrix()
+    }
     void controls.current?.setLookAt(
       target[0]+ox,target[1]+oy,target[2]+oz,
       target[0]+shot.targetOffset[0],target[1]+shot.targetOffset[1],target[2]+shot.targetOffset[2],
