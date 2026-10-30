@@ -1,7 +1,6 @@
 import { CameraControls } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import type CameraControlsImpl from 'camera-controls'
 import { stationPosition } from './layout'
 import { HEAL_SEQUENCE, RUN_SEQUENCE, SHOTS, type ShotName } from './shots'
 
@@ -12,7 +11,7 @@ function requestedShot():ShotName|null{
 }
 
 export function FactoryCamera({focusIndex,mode,reducedMotion}:{focusIndex:number;mode:'idle'|'run'|'heal';reducedMotion:boolean}){
-  const controls=useRef<CameraControlsImpl>(null)
+  const controls=useRef<any>(null)
   const {camera,size}=useThree()
   const timers=useRef<number[]>([])
   const focus=stationPosition(focusIndex)
