@@ -173,7 +173,7 @@ function TrialWorkers({
 }: {
   stations: Station[]
   positions: number[]
-  trial: SimResult['representativeTrials'][Shift]
+  trial: RepresentativeTrial
 }) {
   const layout = useMemo(() => {
     const assigned: Array<[number,number,number]> = []
