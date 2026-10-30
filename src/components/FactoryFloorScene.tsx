@@ -1,9 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Html, Instance, Instances, OrbitControls } from '@react-three/drei'
+import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
+import {
+  advanceLineMotion,
+  CAR_MOVE_SECONDS,
+  carAtStation,
+  carMoveProgress,
+  createLineMotion,
+  easeInOutCubic,
+  queueCompression,
+  stationIsStarved,
+  type LineMotionState,
+} from '../sim/factoryMotion'
 import type { RepresentativeTrial, Shift, SimResult, Station, TrialStationState } from '../sim/types'
 
 const STATUS = {
@@ -12,16 +24,21 @@ const STATUS = {
   risk: { color: '#ff5d5d', label: 'short by 2+' },
 } as const
 
+const PAINTS = ['#4f555b','#d9d9d3','#1d3850','#a7adb1']
+const BODY_IN_WHITE = '#c3c8cb'
+const MOBILE_QUERY = '(max-width: 820px)'
+
 type Tone = keyof typeof STATUS
+type MotionRef = MutableRefObject<LineMotionState>
 
 function toneForStation(station: TrialStationState): Tone {
   return station.status === 'staffed' ? 'ready' : station.status === 'short' ? 'watch' : 'risk'
 }
 
 const lighting = {
-  Early: { background: '#111a21', ambient: '#b9dcf0', key: '#d8efff', fill: '#8ec6e6', intensity: 3.0 },
-  Late: { background: '#1b1511', ambient: '#d4b493', key: '#ffcf9e', fill: '#d68a5b', intensity: 2.6 },
-  Night: { background: '#06090d', ambient: '#52677a', key: '#91b8d9', fill: '#446b8a', intensity: 1.6 },
+  Early: { background: '#101a22', ambient: '#b9dcf0', key: '#d8efff', fill: '#8ec6e6', intensity: 3.3 },
+  Late: { background: '#20150d', ambient: '#d8b08b', key: '#ffd09a', fill: '#d47d4f', intensity: 2.8 },
+  Night: { background: '#04070a', ambient: '#40576a', key: '#82acd0', fill: '#35536b', intensity: 1.45 },
 } as const
 
 function boostedColor(hex: string, intensity: number) {
@@ -82,10 +99,32 @@ function LocalEnvironment() {
   )
 }
 
+function MotionController({
+  trial,
+  motionRef,
+  reducedMotion,
+}: {
+  trial: RepresentativeTrial
+  motionRef: MotionRef
+  reducedMotion: boolean
+}) {
+  useEffect(() => {
+    motionRef.current = createLineMotion(trial)
+  }, [trial, motionRef])
+
+  useFrame((_state, delta) => {
+    if (reducedMotion) return
+    advanceLineMotion(motionRef.current, trial, delta)
+  }, -100)
+
+  return null
+}
+
 function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: boolean }) {
   const ambient = useRef<THREE.AmbientLight>(null)
   const key = useRef<THREE.DirectionalLight>(null)
   const fill = useRef<THREE.DirectionalLight>(null)
+  const nightPools = useRef<Array<THREE.PointLight | null>>([])
   const { scene } = useThree()
 
   useEffect(() => {
@@ -94,13 +133,13 @@ function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: 
 
   useFrame((_state, delta) => {
     const cfg = lighting[shift]
-    const alpha = reducedMotion ? 1 : 1 - Math.exp(-5.2 * delta)
+    const alpha = reducedMotion ? 1 : 1 - Math.exp(-4.5 * delta)
     const bg = scene.background instanceof THREE.Color ? scene.background : new THREE.Color(cfg.background)
     bg.lerp(new THREE.Color(cfg.background), alpha)
     scene.background = bg
 
     if (ambient.current) {
-      ambient.current.intensity = THREE.MathUtils.lerp(ambient.current.intensity, cfg.intensity * .62, alpha)
+      ambient.current.intensity = THREE.MathUtils.lerp(ambient.current.intensity, cfg.intensity * .58, alpha)
       ambient.current.color.lerp(new THREE.Color(cfg.ambient), alpha)
     }
     if (key.current) {
@@ -108,15 +147,38 @@ function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: 
       key.current.color.lerp(new THREE.Color(cfg.key), alpha)
     }
     if (fill.current) {
-      fill.current.intensity = THREE.MathUtils.lerp(fill.current.intensity, cfg.intensity * .48, alpha)
+      fill.current.intensity = THREE.MathUtils.lerp(fill.current.intensity, cfg.intensity * .46, alpha)
       fill.current.color.lerp(new THREE.Color(cfg.fill), alpha)
+    }
+
+    const targetPool = shift === 'Night' ? .95 : .08
+    for (const pool of nightPools.current) {
+      if (pool) pool.intensity = THREE.MathUtils.lerp(pool.intensity,targetPool,alpha)
     }
   })
 
   return <>
     <ambientLight ref={ambient} intensity={1.4} color={lighting[shift].ambient}/>
-    <directionalLight ref={key} position={[8,16,10]} intensity={3} color={lighting[shift].key} castShadow shadow-mapSize={[1024,1024]}/>
+    <directionalLight
+      ref={key}
+      position={shift === 'Late' ? [16,9,10] : [8,16,10]}
+      intensity={3}
+      color={lighting[shift].key}
+      castShadow
+      shadow-mapSize={[1024,1024]}
+    />
     <directionalLight ref={fill} position={[-12,8,-8]} intensity={1.2} color={lighting[shift].fill}/>
+    {[-15,-9,-3,3,9,15].map((x,index) =>
+      <pointLight
+        key={x}
+        ref={light => { nightPools.current[index]=light }}
+        position={[x,4.5,0]}
+        intensity={shift === 'Night' ? .95 : .08}
+        distance={7}
+        decay={2}
+        color="#8cbce2"
+      />
+    )}
   </>
 }
 
@@ -140,23 +202,111 @@ function AreaZone({ x, label, night }: { x: number; label: string; night: boolea
   </group>
 }
 
+function AndonBeacon({
+  tone,
+  redLight,
+  motionRef,
+}: {
+  tone: Tone
+  redLight: boolean
+  motionRef: MotionRef
+}) {
+  const lamp = useRef<THREE.MeshStandardMaterial>(null)
+  const rotor = useRef<THREE.Group>(null)
+  const floorLight = useRef<THREE.PointLight>(null)
+
+  useFrame(() => {
+    const t = motionRef.current.time
+    if (lamp.current) {
+      lamp.current.emissiveIntensity = tone === 'ready'
+        ? 3.2
+        : tone === 'watch'
+          ? 2.2 + (Math.sin(t * 2.3) + 1) * 1.15
+          : 4.8 + (Math.sin(t * 7.5) + 1) * .55
+    }
+    if (rotor.current) rotor.current.rotation.y = t * 5.8
+    if (floorLight.current) floorLight.current.intensity = tone === 'risk'
+      ? 1.0 + (Math.sin(t * 6.5) + 1) * .45
+      : 0
+  })
+
+  const color = STATUS[tone].color
+  return <group>
+    <mesh castShadow>
+      <sphereGeometry args={[.13,14,10]}/>
+      <meshStandardMaterial
+        ref={lamp}
+        color={color}
+        emissive={color}
+        emissiveIntensity={tone === 'risk' ? 5 : 3.2}
+        toneMapped={false}
+      />
+    </mesh>
+    {tone === 'risk' && <group ref={rotor}>
+      <mesh position={[0,0,.19]} rotation={[Math.PI/2,0,0]}>
+        <coneGeometry args={[.11,.42,12,1,true]}/>
+        <meshBasicMaterial color="#ff4e4e" transparent opacity={.16} side={THREE.DoubleSide} depthWrite={false}/>
+      </mesh>
+    </group>}
+    {redLight && <pointLight ref={floorLight} position={[0,-1.9,0]} color="#ff3f3f" distance={3.2} decay={2} intensity={1.1}/>}
+  </group>
+}
+
+function StarvedChip({
+  stationIndex,
+  motionRef,
+  trial,
+}: {
+  stationIndex: number
+  motionRef: MotionRef
+  trial: RepresentativeTrial
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useFrame(() => {
+    if (!ref.current) return
+    const visible = stationIsStarved(motionRef.current,trial,stationIndex)
+    ref.current.style.opacity = visible ? '1' : '0'
+    ref.current.style.transform = visible ? 'translateY(0)' : 'translateY(4px)'
+  })
+  return <Html position={[0,2.15,.2]} center distanceFactor={12} occlude={false}>
+    <div ref={ref} className="factory-starved-chip">STARVED</div>
+  </Html>
+}
+
 function Workcell({
   station,
+  stationIndex,
   x,
   state,
   aggregateRisk,
+  redLight,
+  motionRef,
+  trial,
 }: {
   station: Station
+  stationIndex: number
   x: number
   state: TrialStationState
   aggregateRisk: number
+  redLight: boolean
+  motionRef: MotionRef
+  trial: RepresentativeTrial
 }) {
   const tone = toneForStation(state)
   const meta = STATUS[tone]
+  const baseMaterial = useRef<THREE.MeshStandardMaterial>(null)
+
+  useFrame(() => {
+    if (!baseMaterial.current) return
+    const starved = stationIsStarved(motionRef.current,trial,stationIndex)
+    const target = new THREE.Color(starved ? '#080b0e' : tone === 'risk' ? '#171214' : tone === 'watch' ? '#171611' : '#10161a')
+    baseMaterial.current.color.lerp(target,.12)
+  })
+
   return <group position={[x,0,0]}>
     <mesh position={[0,.055,0]} receiveShadow>
       <boxGeometry args={[2.45,.08,5.35]}/>
-      <meshStandardMaterial color={tone === 'risk' ? '#171214' : tone === 'watch' ? '#171611' : '#10161a'} roughness={.8}/>
+      <meshStandardMaterial ref={baseMaterial} color={tone === 'risk' ? '#171214' : tone === 'watch' ? '#171611' : '#10161a'} roughness={.8}/>
     </mesh>
 
     <mesh position={[0,.08,2.25]}>
@@ -168,10 +318,11 @@ function Workcell({
       <cylinderGeometry args={[.035,.045,2.2,8]}/>
       <meshStandardMaterial color="#6f7b86" roughness={.48} metalness={.55}/>
     </mesh>
-    <mesh position={[.88,2.3,-1.95]} castShadow>
-      <sphereGeometry args={[.13,14,10]}/>
-      <meshStandardMaterial color={meta.color} emissive={meta.color} emissiveIntensity={tone === 'risk' ? 5.5 : 3.4} toneMapped={false}/>
-    </mesh>
+    <group position={[.88,2.3,-1.95]}>
+      <AndonBeacon tone={tone} redLight={redLight} motionRef={motionRef}/>
+    </group>
+
+    <StarvedChip stationIndex={stationIndex} motionRef={motionRef} trial={trial}/>
 
     <Html position={[0,2.78,-1.95]} center distanceFactor={12} occlude={false}>
       <div className={`factory-cell-label ${tone}`}>
@@ -184,8 +335,44 @@ function Workcell({
   </group>
 }
 
-function Conveyor() {
-  const rollerXs = useMemo(() => Array.from({ length: 52 }, (_, i) => -19.1 + i * .75), [])
+function makeBeltTexture() {
+  const width = 64
+  const height = 4
+  const data = new Uint8Array(width * height * 4)
+  for (let y=0;y<height;y++) {
+    for (let x=0;x<width;x++) {
+      const stripe = Math.floor(x / 8) % 2 === 0
+      const value = stripe ? 74 : 39
+      const offset=(y*width+x)*4
+      data[offset]=value
+      data[offset+1]=value+5
+      data[offset+2]=value+8
+      data[offset+3]=255
+    }
+  }
+  const texture = new THREE.DataTexture(data,width,height,THREE.RGBAFormat)
+  texture.wrapS=THREE.RepeatWrapping
+  texture.wrapT=THREE.RepeatWrapping
+  texture.repeat.set(2.5,1)
+  texture.needsUpdate=true
+  return texture
+}
+
+function BeltSegment({ x, index, motionRef }: { x: number; index: number; motionRef: MotionRef }) {
+  const texture = useMemo(() => makeBeltTexture(),[])
+  useEffect(() => () => texture.dispose(),[texture])
+
+  useFrame((_state,delta) => {
+    if (motionRef.current.movingSegments.has(index)) texture.offset.x -= delta * .9
+  })
+
+  return <mesh position={[x,.565,0]} rotation={[-Math.PI/2,0,0]} receiveShadow>
+    <planeGeometry args={[2.86,1.5]}/>
+    <meshStandardMaterial map={texture} color="#7e8992" roughness={.46} metalness={.42}/>
+  </mesh>
+}
+
+function Conveyor({ xs, motionRef }: { xs: number[]; motionRef: MotionRef }) {
   return <group>
     <mesh position={[0,.30,0]} receiveShadow>
       <boxGeometry args={[39,.28,1.75]}/>
@@ -195,15 +382,12 @@ function Conveyor() {
       <boxGeometry args={[39,.10,1.58]}/>
       <meshStandardMaterial color="#11161a" roughness={.42} metalness={.5}/>
     </mesh>
-    <Instances limit={rollerXs.length}>
-      <cylinderGeometry args={[.07,.07,1.48,10]}/>
-      <meshStandardMaterial color="#5c6670" roughness={.34} metalness={.65}/>
-      {rollerXs.map((x,i) => <Instance key={i} position={[x,.57,0]} rotation={[Math.PI/2,0,0]}/>)}
-    </Instances>
+    {xs.map((x,index)=><BeltSegment key={index} x={x} index={index} motionRef={motionRef}/>)}
   </group>
 }
 
-function EmptySpot({ position }: { position: [number,number,number] }) {
+function EmptySpot({ position, motionRef }: { position: [number,number,number]; motionRef: MotionRef }) {
+  const material = useRef<THREE.MeshBasicMaterial>(null)
   const segments = useMemo(() => Array.from({ length: 8 }, (_, i) => {
     const angle = i * Math.PI / 4
     return {
@@ -216,138 +400,630 @@ function EmptySpot({ position }: { position: [number,number,number] }) {
     }
   }), [position])
 
+  useFrame(() => {
+    if (material.current) material.current.opacity=.28 + (Math.sin(motionRef.current.time*1.7)+1)*.12
+  })
+
   return <group>
     {segments.map((segment,i) => <mesh key={i} position={segment.position} rotation={segment.rotation}>
       <boxGeometry args={[.15,.018,.026]}/>
-      <meshBasicMaterial color="#75808b" transparent opacity={.48}/>
+      <meshBasicMaterial ref={i===0?material:undefined} color="#75808b" transparent opacity={.4}/>
     </mesh>)}
   </group>
+}
+
+interface WorkerVisual {
+  position: [number,number,number]
+  stationIndex: number
+  lapsed: boolean
+  face: number
 }
 
 function TrialWorkers({
   stations,
   positions,
   trial,
+  motionRef,
 }: {
   stations: Station[]
   positions: number[]
   trial: RepresentativeTrial
+  motionRef: MotionRef
 }) {
+  const refs = useRef<Array<THREE.Group | null>>([])
   const layout = useMemo(() => {
-    const assigned: Array<[number,number,number]> = []
-    const assignedHelmets: Array<[number,number,number]> = []
-    const lapsed: Array<[number,number,number]> = []
-    const lapsedHelmets: Array<[number,number,number]> = []
-    const empty: Array<[number,number,number]> = []
+    const workers: WorkerVisual[] = []
+    const empty: Array<{position:[number,number,number];stationIndex:number}> = []
 
-    stations.forEach((station, index) => {
-      const state = trial.stations.find(s => s.stationId === station.id)
-      if (!state) return
-      const spots = Array.from({ length: state.required }, (_, i) => {
-        const side = i % 2 === 0 ? -1 : 1
-        const row = Math.floor(i / 2)
-        return [positions[index] + side * .55, .88, 1.55 + row * .46] as [number,number,number]
+    stations.forEach((station,index) => {
+      const state=trial.stations.find(s=>s.stationId===station.id)
+      if(!state) return
+      const spots=Array.from({length:state.required},(_,i)=>{
+        const side=i%2===0?1:-1
+        const row=Math.floor(i/2)
+        return {
+          position:[positions[index]+(row-.5)*.28,.88,side*(1.52+row*.17)] as [number,number,number],
+          face:side>0?Math.PI:0,
+        }
       })
 
-      let cursor = 0
-      for (let i = 0; i < state.assigned; i++, cursor++) {
-        const p = spots[cursor]
-        assigned.push(p)
-        assignedHelmets.push([p[0],p[1]+.38,p[2]])
+      let cursor=0
+      for(let i=0;i<state.assigned;i++,cursor++){
+        const spot=spots[cursor]
+        workers.push({position:spot.position,stationIndex:index,lapsed:false,face:spot.face})
       }
 
-      const lapsedCount = Math.min(state.deficit, state.lapsedPresentWorkerSlots.length)
-      for (let i = 0; i < lapsedCount; i++, cursor++) {
-        const p = spots[cursor]
-        lapsed.push(p)
-        lapsedHelmets.push([p[0],p[1]+.38,p[2]])
+      const lapsedCount=Math.min(state.deficit,state.lapsedPresentWorkerSlots.length)
+      for(let i=0;i<lapsedCount;i++,cursor++){
+        const spot=spots[cursor]
+        const away=spot.position[2]>0?.28:-.28
+        workers.push({
+          position:[spot.position[0],spot.position[1],spot.position[2]+away],
+          stationIndex:index,
+          lapsed:true,
+          face:spot.face,
+        })
       }
 
-      for (; cursor < spots.length; cursor++) empty.push(spots[cursor])
+      for(;cursor<spots.length;cursor++) empty.push({position:spots[cursor].position,stationIndex:index})
     })
 
-    return { assigned, assignedHelmets, lapsed, lapsedHelmets, empty }
-  }, [stations, positions, trial])
+    return {workers,empty}
+  },[stations,positions,trial])
+
+  useFrame(() => {
+    const motion=motionRef.current
+    for(let i=0;i<layout.workers.length;i++){
+      const group=refs.current[i]
+      if(!group) continue
+      const worker=layout.workers[i]
+      const car=carAtStation(motion,worker.stationIndex)
+      const working=Boolean(car && !car.moving && !worker.lapsed)
+      const breath=1 + Math.sin(motion.time*1.8+i*.7)*.012
+      group.scale.y=breath
+      group.rotation.y=worker.face
+      group.rotation.x=working ? Math.sin(motion.time*2.5+i)*.035 + .055 : 0
+      group.position.y=worker.position[1] + Math.sin(motion.time*1.5+i*.4)*.012
+    }
+  })
 
   return <>
-    <Instances limit={layout.assigned.length}>
-      <capsuleGeometry args={[.13,.42,4,8]}/>
-      <meshStandardMaterial color="#9ba7b3" roughness={.58} metalness={.06}/>
-      {layout.assigned.map((position,i) => <Instance key={i} position={position} castShadow/>)}
-    </Instances>
-    <Instances limit={layout.assignedHelmets.length}>
-      <sphereGeometry args={[.16,8,6]}/>
-      <meshStandardMaterial color="#d5a936" roughness={.5}/>
-      {layout.assignedHelmets.map((position,i) => <Instance key={i} position={position} scale={[1,.52,1]} castShadow/>)}
-    </Instances>
-
-    <Instances limit={layout.lapsed.length}>
-      <capsuleGeometry args={[.13,.42,4,8]}/>
-      <meshStandardMaterial color="#565e66" roughness={.72}/>
-      {layout.lapsed.map((position,i) => <Instance key={i} position={position} castShadow/>)}
-    </Instances>
-    <Instances limit={layout.lapsedHelmets.length}>
-      <sphereGeometry args={[.16,8,6]}/>
-      <meshStandardMaterial color="#6d747a" roughness={.68}/>
-      {layout.lapsedHelmets.map((position,i) => <Instance key={i} position={position} scale={[1,.52,1]} castShadow/>)}
-    </Instances>
-
-    {layout.empty.map((position,i) => <EmptySpot key={i} position={position}/>)}
+    {layout.workers.map((worker,i)=>
+      <group
+        key={i}
+        ref={group=>{refs.current[i]=group}}
+        position={worker.position}
+        rotation={[0,worker.face,0]}
+      >
+        <mesh castShadow>
+          <capsuleGeometry args={[.13,.42,4,8]}/>
+          <meshStandardMaterial color={worker.lapsed?'#565e66':'#9ba7b3'} roughness={worker.lapsed?.72:.58} metalness={.06}/>
+        </mesh>
+        <mesh position={[0,.38,0]} scale={[1,.52,1]} castShadow>
+          <sphereGeometry args={[.16,8,6]}/>
+          <meshStandardMaterial color={worker.lapsed?'#6d747a':'#d5a936'} roughness={.55}/>
+        </mesh>
+        {worker.lapsed && <mesh position={[.14,.10,.13]} rotation={[0,0,0]}>
+          <circleGeometry args={[.055,12]}/>
+          <meshStandardMaterial color="#f5b841" emissive="#f5b841" emissiveIntensity={1.2} toneMapped={false}/>
+        </mesh>}
+      </group>
+    )}
+    {layout.empty.map((spot,i)=><EmptySpot key={i} position={spot.position} motionRef={motionRef}/>)}
   </>
 }
 
-function StaticCars({ positions }: { positions: number[] }) {
-  const colors = ['#aeb7bf','#6e7882','#d4d7d9','#88949f']
-  return <Instances limit={positions.length}>
-    <boxGeometry args={[1.58,.42,.90]}/>
-    <meshStandardMaterial roughness={.32} metalness={.68}/>
-    {positions.map((x,i) =>
-      <Instance key={i} position={[x,1.0,0]} color={colors[i % colors.length]} castShadow />
-    )}
-  </Instances>
+function slotX(xs: number[], slot: number) {
+  if(slot<0) return xs[0]-3
+  if(slot>=xs.length) return xs[xs.length-1]+3
+  return xs[slot]
 }
 
-function StaticAgvs() {
-  const positions: Array<[number,number,number]> = [[10,.28,4.45],[1,.28,4.45],[-10,.28,4.45]]
+function isQueueLinked(state: LineMotionState, slot: number) {
+  const b=state.bottleneckIndex
+  if(slot<0 || slot>b || state.slots[b]==null) return false
+  for(let i=slot;i<=b;i++) if(state.slots[i]==null) return false
+  return true
+}
+
+function renderSlotX(xs: number[], state: LineMotionState, slot: number) {
+  const base=slotX(xs,slot)
+  if(slot<0 || slot>=xs.length || !isQueueLinked(state,slot)) return base
+  const compression=queueCompression(state)
+  if(compression<=0) return base
+  const target=xs[state.bottleneckIndex]-(state.bottleneckIndex-slot)*2.08
+  return THREE.MathUtils.lerp(base,target,Math.min(1,compression))
+}
+
+function CarFleet({
+  xs,
+  motionRef,
+}: {
+  xs: number[]
+  motionRef: MotionRef
+}) {
+  const maxCars=12
+  const bodyRef=useRef<THREE.InstancedMesh>(null)
+  const cabinRef=useRef<THREE.InstancedMesh>(null)
+  const glassRef=useRef<THREE.InstancedMesh>(null)
+  const wheelRef=useRef<THREE.InstancedMesh>(null)
+  const lightRef=useRef<THREE.InstancedMesh>(null)
+  const bodyGeo=useMemo(()=>new RoundedBoxGeometry(1.72,.38,.88,3,.11),[])
+  const cabinGeo=useMemo(()=>new RoundedBoxGeometry(.92,.34,.74,3,.08),[])
+  const glassGeo=useMemo(()=>new RoundedBoxGeometry(.72,.22,.755,2,.055),[])
+  const wheelGeo=useMemo(()=>new THREE.CylinderGeometry(.19,.19,.12,12),[])
+  const lightGeo=useMemo(()=>new RoundedBoxGeometry(.06,.09,.56,2,.025),[])
+  const temp=useMemo(()=>new THREE.Object3D(),[])
+  const color=useMemo(()=>new THREE.Color(),[])
+
+  useEffect(()=>()=>{bodyGeo.dispose();cabinGeo.dispose();glassGeo.dispose();wheelGeo.dispose();lightGeo.dispose()},[bodyGeo,cabinGeo,glassGeo,wheelGeo,lightGeo])
+
+  const hide=(mesh:THREE.InstancedMesh,index:number)=>{
+    temp.position.set(0,-50,0)
+    temp.rotation.set(0,0,0)
+    temp.scale.set(0,0,0)
+    temp.updateMatrix()
+    mesh.setMatrixAt(index,temp.matrix)
+  }
+
+  useFrame(()=>{
+    const state=motionRef.current
+    const cars=[...state.cars.values()].sort((a,b)=>a.id-b.id).slice(0,maxCars)
+
+    for(let i=0;i<maxCars;i++){
+      const body=bodyRef.current
+      const cabin=cabinRef.current
+      const glass=glassRef.current
+      if(!body||!cabin||!glass) continue
+      const car=cars[i]
+      if(!car){
+        hide(body,i);hide(cabin,i);hide(glass,i)
+        continue
+      }
+
+      const p=easeInOutCubic(carMoveProgress(car,state.time))
+      const fromX=renderSlotX(xs,state,car.fromSlot)
+      const toX=renderSlotX(xs,state,car.slot)
+      const x=THREE.MathUtils.lerp(fromX,toX,p)
+      const stage=Math.max(0,Math.min(xs.length-1,car.slot))
+      const bodyColor=stage<2?BODY_IN_WHITE:PAINTS[car.id%PAINTS.length]
+      const bounce=car.moving?Math.sin(p*Math.PI)*.025:0
+
+      temp.position.set(x,1.02+bounce,0)
+      temp.rotation.set(0,0,0)
+      temp.scale.set(1,1,1)
+      temp.updateMatrix()
+      body.setMatrixAt(i,temp.matrix)
+      body.setColorAt(i,color.set(bodyColor))
+
+      temp.position.set(x-.08,1.33+bounce,0)
+      temp.scale.set(1,1,1)
+      temp.updateMatrix()
+      cabin.setMatrixAt(i,temp.matrix)
+      cabin.setColorAt(i,color.set(bodyColor))
+
+      if(stage>=4){
+        temp.position.set(x-.08,1.35+bounce,0)
+        temp.scale.set(1,1,1)
+        temp.updateMatrix()
+        glass.setMatrixAt(i,temp.matrix)
+      }else hide(glass,i)
+    }
+
+    if(bodyRef.current){
+      bodyRef.current.instanceMatrix.needsUpdate=true
+      if(bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate=true
+    }
+    if(cabinRef.current){
+      cabinRef.current.instanceMatrix.needsUpdate=true
+      if(cabinRef.current.instanceColor) cabinRef.current.instanceColor.needsUpdate=true
+    }
+    if(glassRef.current) glassRef.current.instanceMatrix.needsUpdate=true
+
+    const wheels=wheelRef.current
+    if(wheels){
+      let wi=0
+      for(const car of cars){
+        const p=easeInOutCubic(carMoveProgress(car,state.time))
+        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
+        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
+        const spin=car.moving ? -(state.time-car.moveStart)*5.5 : 0
+        for(const dx of [-.55,.55]){
+          for(const dz of [-.48,.48]){
+            if(stage>=7){
+              temp.position.set(x+dx,1.0,dz)
+              temp.rotation.set(Math.PI/2,0,spin)
+              temp.scale.set(1,1,1)
+              temp.updateMatrix()
+              wheels.setMatrixAt(wi,temp.matrix)
+            }else hide(wheels,wi)
+            wi++
+          }
+        }
+      }
+      while(wi<maxCars*4) hide(wheels,wi++)
+      wheels.instanceMatrix.needsUpdate=true
+    }
+
+    const lights=lightRef.current
+    if(lights){
+      let li=0
+      for(const car of cars){
+        const p=easeInOutCubic(carMoveProgress(car,state.time))
+        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
+        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
+        for(const end of [-1,1]){
+          if(stage>=8){
+            temp.position.set(x+end*.86,1.05,0)
+            temp.rotation.set(0,0,0)
+            temp.scale.set(1,1,1)
+            temp.updateMatrix()
+            lights.setMatrixAt(li,temp.matrix)
+            lights.setColorAt(li,color.set(end>0?'#dff4ff':'#ff5d5d'))
+          }else hide(lights,li)
+          li++
+        }
+      }
+      while(li<maxCars*2) hide(lights,li++)
+      lights.instanceMatrix.needsUpdate=true
+      if(lights.instanceColor) lights.instanceColor.needsUpdate=true
+    }
+  })
+
   return <>
-    <mesh position={[0,.035,4.45]}>
-      <boxGeometry args={[35,.025,.06]}/>
-      <meshBasicMaterial color="#826c25"/>
+    <instancedMesh ref={bodyRef} args={[bodyGeo,undefined,maxCars]} castShadow receiveShadow>
+      <meshStandardMaterial roughness={.32} metalness={.68}/>
+    </instancedMesh>
+    <instancedMesh ref={cabinRef} args={[cabinGeo,undefined,maxCars]} castShadow>
+      <meshStandardMaterial roughness={.34} metalness={.62}/>
+    </instancedMesh>
+    <instancedMesh ref={glassRef} args={[glassGeo,undefined,maxCars]} castShadow>
+      <meshPhysicalMaterial color="#172531" roughness={.16} metalness={.06} transmission={.05}/>
+    </instancedMesh>
+    <instancedMesh ref={wheelRef} args={[wheelGeo,undefined,maxCars*4]} castShadow>
+      <meshStandardMaterial color="#17191c" roughness={.72} metalness={.18}/>
+    </instancedMesh>
+    <instancedMesh ref={lightRef} args={[lightGeo,undefined,maxCars*2]}>
+      <meshStandardMaterial emissive="#ffffff" emissiveIntensity={2.6} toneMapped={false}/>
+    </instancedMesh>
+  </>
+}
+
+function WeldSparks({
+  motionRef,
+  trial,
+  stationIndex,
+  disabled,
+}: {
+  motionRef: MotionRef
+  trial: RepresentativeTrial
+  stationIndex: number
+  disabled: boolean
+}) {
+  const count=44
+  const mesh=useRef<THREE.InstancedMesh>(null)
+  const temp=useMemo(()=>new THREE.Object3D(),[])
+
+  useFrame(()=>{
+    if(!mesh.current) return
+    const state=motionRef.current
+    const car=carAtStation(state,stationIndex)
+    const staffed=trial.stations[stationIndex]?.deficit===0
+    const active=!disabled && staffed && Boolean(car && !car.moving)
+
+    for(let i=0;i<count;i++){
+      if(!active){
+        temp.position.set(0,0,0);temp.scale.set(0,0,0);temp.updateMatrix();mesh.current.setMatrixAt(i,temp.matrix)
+        continue
+      }
+      const phase=(state.time*3.4+i/count)%1
+      if(phase>.26){
+        temp.position.set(0,0,0);temp.scale.set(0,0,0);temp.updateMatrix();mesh.current.setMatrixAt(i,temp.matrix)
+        continue
+      }
+      const angle=(i*2.399963229728653 + Math.floor(state.time*3.4)*.73)%(Math.PI*2)
+      const radius=.08+phase*.55
+      temp.position.set(Math.cos(angle)*radius,-phase*phase*1.15,Math.sin(angle)*radius)
+      const size=.022*(1-phase/.26)
+      temp.scale.setScalar(size)
+      temp.updateMatrix()
+      mesh.current.setMatrixAt(i,temp.matrix)
+    }
+    mesh.current.instanceMatrix.needsUpdate=true
+  })
+
+  return <instancedMesh ref={mesh} args={[undefined,undefined,count]}>
+    <sphereGeometry args={[1,5,4]}/>
+    <meshBasicMaterial color="#ffd36a" transparent opacity={.92} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false}/>
+  </instancedMesh>
+}
+
+function RobotArm({
+  position,
+  stationIndex,
+  motionRef,
+  trial,
+  mirror=false,
+  sparksDisabled=false,
+  phaseOffset=0,
+}: {
+  position:[number,number,number]
+  stationIndex:number
+  motionRef:MotionRef
+  trial:RepresentativeTrial
+  mirror?:boolean
+  sparksDisabled?:boolean
+  phaseOffset?:number
+}) {
+  const shoulder=useRef<THREE.Group>(null)
+  const elbow=useRef<THREE.Group>(null)
+  const wrist=useRef<THREE.Group>(null)
+
+  useFrame(()=>{
+    const state=motionRef.current
+    const car=carAtStation(state,stationIndex)
+    const staffed=trial.stations[stationIndex]?.deficit===0
+    const active=staffed && Boolean(car && !car.moving)
+    const sign=mirror?-1:1
+
+    if(!shoulder.current||!elbow.current||!wrist.current) return
+    if(!active){
+      shoulder.current.rotation.z=THREE.MathUtils.lerp(shoulder.current.rotation.z,sign*.18,.08)
+      elbow.current.rotation.z=THREE.MathUtils.lerp(elbow.current.rotation.z,-sign*.38,.08)
+      wrist.current.rotation.z=THREE.MathUtils.lerp(wrist.current.rotation.z,sign*.16,.08)
+      return
+    }
+
+    const dwell=Math.max(.1,(car!.readyAt-car!.arrivedAt))
+    const phase=Number.isFinite(dwell)
+      ? Math.max(0,Math.min(1,(state.time-car!.arrivedAt)/dwell))
+      : 0
+    const weld=Math.sin((phase*5+phaseOffset)*Math.PI*2)
+    const reach=Math.sin(Math.min(1,phase*2)*Math.PI/2)
+
+    shoulder.current.rotation.z=sign*(.18-.48*reach+.07*weld)
+    elbow.current.rotation.z=-sign*(.38+.55*reach-.08*weld)
+    wrist.current.rotation.z=sign*(.16+.24*reach+.12*Math.sin((phase*6+phaseOffset)*Math.PI*2))
+  })
+
+  return <group position={position} rotation={[0,mirror?Math.PI:0,0]}>
+    <mesh position={[0,.14,0]} castShadow>
+      <cylinderGeometry args={[.26,.31,.28,12]}/>
+      <meshStandardMaterial color="#b8942f" roughness={.48} metalness={.38}/>
     </mesh>
-    {positions.map((position,i) => <group position={position} key={i}>
+    <group ref={shoulder} position={[0,.34,0]}>
+      <mesh position={[0,.45,0]} castShadow>
+        <capsuleGeometry args={[.105,.65,5,8]}/>
+        <meshStandardMaterial color="#d2aa35" roughness={.42} metalness={.34}/>
+      </mesh>
+      <group ref={elbow} position={[0,.88,0]}>
+        <mesh position={[0,.38,0]} castShadow>
+          <capsuleGeometry args={[.09,.52,5,8]}/>
+          <meshStandardMaterial color="#bd982f" roughness={.42} metalness={.34}/>
+        </mesh>
+        <group ref={wrist} position={[0,.72,0]}>
+          <mesh position={[0,.21,0]} castShadow>
+            <capsuleGeometry args={[.065,.28,4,7]}/>
+            <meshStandardMaterial color="#8b949d" roughness={.4} metalness={.52}/>
+          </mesh>
+          <group position={[0,.47,0]}>
+            <mesh>
+              <cylinderGeometry args={[.045,.025,.18,8]}/>
+              <meshStandardMaterial color="#3d444a" roughness={.38} metalness={.62}/>
+            </mesh>
+            <group position={[0,.11,0]}>
+              <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>
+            </group>
+          </group>
+        </group>
+      </group>
+    </group>
+  </group>
+}
+
+function TorqueEffect({
+  x,
+  motionRef,
+  trial,
+  stationIndex,
+  reducedMotion,
+}: {
+  x:number
+  motionRef:MotionRef
+  trial:RepresentativeTrial
+  stationIndex:number
+  reducedMotion:boolean
+}) {
+  const group=useRef<THREE.Group>(null)
+  const material=useRef<THREE.MeshStandardMaterial>(null)
+  useFrame(()=>{
+    if(!group.current||!material.current) return
+    const car=carAtStation(motionRef.current,stationIndex)
+    const active=!reducedMotion && trial.stations[stationIndex]?.deficit===0 && Boolean(car&&!car.moving)
+    group.current.visible=active
+    if(active){
+      group.current.rotation.z=motionRef.current.time*8
+      material.current.emissiveIntensity=1.6+(Math.sin(motionRef.current.time*12)+1)*1.2
+    }
+  })
+  return <group ref={group} position={[x,1.13,.55]} rotation={[Math.PI/2,0,0]}>
+    <mesh>
+      <torusGeometry args={[.22,.025,8,18,.85*Math.PI*2]}/>
+      <meshStandardMaterial ref={material} color="#f5b841" emissive="#f5b841" emissiveIntensity={2} toneMapped={false}/>
+    </mesh>
+  </group>
+}
+
+function buildCurveClock(curve: THREE.CatmullRomCurve3) {
+  const samples=160
+  const cumulative=[0]
+  let total=0
+  for(let i=1;i<=samples;i++){
+    const t=i/samples
+    const prev=Math.max(0,t-.012)
+    const next=Math.min(1,t+.012)
+    const a=curve.getTangentAt(prev).normalize()
+    const b=curve.getTangentAt(next).normalize()
+    const straightness=Math.max(0,Math.min(1,(a.dot(b)+1)/2))
+    const speed=.52+.48*straightness
+    total+=1/speed
+    cumulative.push(total)
+  }
+  for(let i=0;i<cumulative.length;i++) cumulative[i]/=total
+  return (phase:number)=>{
+    const p=((phase%1)+1)%1
+    let lo=0,hi=samples
+    while(lo<hi){
+      const mid=Math.floor((lo+hi)/2)
+      if(cumulative[mid]<p) lo=mid+1
+      else hi=mid
+    }
+    const upper=Math.max(1,lo)
+    const lower=upper-1
+    const span=Math.max(1e-6,cumulative[upper]-cumulative[lower])
+    const local=(p-cumulative[lower])/span
+    return (lower+local)/samples
+  }
+}
+
+function AGVLoop({
+  motionRef,
+  trial,
+  reducedMotion,
+}: {
+  motionRef:MotionRef
+  trial:RepresentativeTrial
+  reducedMotion:boolean
+}) {
+  const groups=useRef<Array<THREE.Group|null>>([])
+  const beacons=useRef<Array<THREE.MeshStandardMaterial|null>>([])
+  const curve=useMemo(()=>new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-17,.28,4.55),
+    new THREE.Vector3(-9,.28,5.0),
+    new THREE.Vector3(0,.28,4.75),
+    new THREE.Vector3(9,.28,4.9),
+    new THREE.Vector3(15,.28,4.25),
+    new THREE.Vector3(14,.28,3.0),
+    new THREE.Vector3(7,.28,2.75),
+    new THREE.Vector3(-2,.28,3.05),
+    new THREE.Vector3(-12,.28,3.0),
+    new THREE.Vector3(-17,.28,4.55),
+  ],true,'catmullrom',.2),[])
+  const phaseToT=useMemo(()=>buildCurveClock(curve),[curve])
+  const materialFlowIndex=trial.stations.findIndex(s=>s.stationId==='material-flow')
+  const materialShort=materialFlowIndex>=0 && trial.stations[materialFlowIndex].deficit>0
+  const dockT=.43
+
+  useFrame(()=>{
+    const time=motionRef.current.time
+    for(let i=0;i<3;i++){
+      const group=groups.current[i]
+      const beacon=beacons.current[i]
+      if(!group||!beacon) continue
+      const phase=materialShort
+        ? dockT + (i-1)*.013
+        : reducedMotion
+          ? .14+i*.26
+          : (time*.035+i/3)%1
+      const t=materialShort?phase:phaseToT(phase)
+      const point=curve.getPointAt(((t%1)+1)%1)
+      const tangent=curve.getTangentAt(((t%1)+1)%1)
+      group.position.copy(point)
+      group.rotation.y=-Math.atan2(tangent.z,tangent.x)
+      const pulse=(Math.sin(time*5+i)+1)/2
+      beacon.color.set(materialShort?'#f5b841':'#5cc8ff')
+      beacon.emissive.set(materialShort?'#f5b841':'#5cc8ff')
+      beacon.emissiveIntensity=materialShort?1.5:1.1+pulse*1.8
+    }
+  })
+
+  const pathPoints=useMemo(()=>curve.getPoints(100),[curve])
+  const pathGeometry=useMemo(()=>new THREE.BufferGeometry().setFromPoints(pathPoints),[pathPoints])
+
+  return <>
+    <primitive object={new THREE.Line(pathGeometry,new THREE.LineBasicMaterial({color:'#826c25',transparent:true,opacity:.55}))}/>
+    {[0,1,2].map(i=><group key={i} ref={group=>{groups.current[i]=group}}>
       <mesh castShadow>
         <boxGeometry args={[1.05,.32,.72]}/>
         <meshStandardMaterial color="#252d34" roughness={.42} metalness={.4}/>
       </mesh>
       <mesh position={[.30,.22,0]}>
         <boxGeometry args={[.22,.08,.35]}/>
-        <meshStandardMaterial color="#5cc8ff" emissive="#5cc8ff" emissiveIntensity={1.3} toneMapped={false}/>
+        <meshStandardMaterial ref={m=>{beacons.current[i]=m}} color="#5cc8ff" emissive="#5cc8ff" emissiveIntensity={1.3} toneMapped={false}/>
+      </mesh>
+      <mesh position={[-.31,.18,0]}>
+        <boxGeometry args={[.22,.08,.42]}/>
+        <meshStandardMaterial color="#66717b" roughness={.5} metalness={.38}/>
       </mesh>
     </group>)}
   </>
+}
+
+function AlarmStrip({
+  xs,
+  motionRef,
+}: {
+  xs:number[]
+  motionRef:MotionRef
+}) {
+  const mesh=useRef<THREE.Mesh>(null)
+  const material=useRef<THREE.MeshStandardMaterial>(null)
+  useFrame(()=>{
+    const state=motionRef.current
+    if(!mesh.current||!material.current) return
+    mesh.current.position.x=xs[state.bottleneckIndex]??0
+    mesh.current.visible=state.lineStopped
+    if(state.lineStopped) material.current.emissiveIntensity=2.5+(Math.sin(state.time*10)+1)*2.4
+  })
+  return <mesh ref={mesh} position={[0,5.45,0]}>
+    <boxGeometry args={[2.7,.06,.22]}/>
+    <meshStandardMaterial ref={material} color="#ff4d4d" emissive="#ff4d4d" emissiveIntensity={3} toneMapped={false}/>
+  </mesh>
 }
 
 function OverheadLights({ night }: { night: boolean }) {
   return <>
     {[-14,-7,0,7,14].map((x,i) => <mesh position={[x,6,0]} key={i}>
       <boxGeometry args={[4.7,.05,.18]}/>
-      <meshStandardMaterial color={night ? '#b9d8ee' : '#eef5f7'} emissive={night ? '#8cbce2' : '#d6e4ea'} emissiveIntensity={night ? 2.0 : .65} toneMapped={false}/>
+      <meshStandardMaterial color={night ? '#b9d8ee' : '#eef5f7'} emissive={night ? '#8cbce2' : '#d6e4ea'} emissiveIntensity={night ? 2.2 : .72} toneMapped={false}/>
     </mesh>)}
   </>
 }
 
-function FactoryWorld({ result, trial, shift, seed, reducedMotion }: { result: SimResult; trial: RepresentativeTrial; shift: Shift; seed: number; reducedMotion: boolean }) {
-  const plant = useMemo(() => generatePlant(seed), [seed])
-  const xs = useMemo(() => plant.stations.map((_s,i) => -16.5 + i * 3), [plant.stations])
-  const stationStates = useMemo(() => new Map(trial.stations.map(state => [state.stationId,state])), [trial])
-  const risks = useMemo(
-    () => new Map(result.stationRisks.filter(r => r.shift === shift).map(r => [r.stationId, r])),
-    [result, shift],
+function FactoryWorld({
+  result,
+  trial,
+  shift,
+  seed,
+  reducedMotion,
+}: {
+  result:SimResult
+  trial:RepresentativeTrial
+  shift:Shift
+  seed:number
+  reducedMotion:boolean
+}) {
+  const plant=useMemo(()=>generatePlant(seed),[seed])
+  const xs=useMemo(()=>plant.stations.map((_s,i)=>-16.5+i*3),[plant.stations])
+  const motionRef=useRef<LineMotionState>(createLineMotion(trial))
+  const stationStates=useMemo(()=>new Map(trial.stations.map(state=>[state.stationId,state])),[trial])
+  const risks=useMemo(
+    ()=>new Map(result.stationRisks.filter(r=>r.shift===shift).map(r=>[r.stationId,r])),
+    [result,shift],
   )
-  const carPositions = useMemo(() => [-15,-11.6,-8.2,-4.8,-1.4,2,5.4,8.8,12.2,15.6], [])
-  const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 820px)').matches
+  const mobile=typeof window!=='undefined'&&window.matchMedia(MOBILE_QUERY).matches
+  const redLightIndices=useMemo(
+    ()=>trial.stations
+      .map((station,index)=>({station,index}))
+      .filter(x=>x.station.status==='uncovered')
+      .sort((a,b)=>b.station.deficit-a.station.deficit)
+      .slice(0,3)
+      .map(x=>x.index),
+    [trial],
+  )
 
   return <>
+    <MotionController trial={trial} motionRef={motionRef} reducedMotion={reducedMotion}/>
     <ShiftLighting shift={shift} reducedMotion={reducedMotion}/>
     <LocalEnvironment/>
 
@@ -357,31 +1033,41 @@ function FactoryWorld({ result, trial, shift, seed, reducedMotion }: { result: S
     </mesh>
     <gridHelper args={[44,44,'#27313a','#171d22']} position={[0,.012,0]}/>
 
-    <AreaZone x={-12} label="BODY SYSTEMS" night={shift === 'Night'}/>
-    <AreaZone x={0} label="ASSEMBLY" night={shift === 'Night'}/>
-    <AreaZone x={12} label="QUALITY & FLOW" night={shift === 'Night'}/>
+    <AreaZone x={-12} label="BODY SYSTEMS" night={shift==='Night'}/>
+    <AreaZone x={0} label="ASSEMBLY" night={shift==='Night'}/>
+    <AreaZone x={12} label="QUALITY & FLOW" night={shift==='Night'}/>
 
-    <Conveyor/>
-    <StaticCars positions={carPositions}/>
-    <TrialWorkers stations={plant.stations} positions={xs} trial={trial}/>
-    <StaticAgvs/>
-    <OverheadLights night={shift === 'Night'}/>
+    <Conveyor xs={xs} motionRef={motionRef}/>
+    <CarFleet xs={xs} motionRef={motionRef}/>
+    <TrialWorkers stations={plant.stations} positions={xs} trial={trial} motionRef={motionRef}/>
+    <AGVLoop motionRef={motionRef} trial={trial} reducedMotion={reducedMotion}/>
+    <OverheadLights night={shift==='Night'}/>
+    <AlarmStrip xs={xs} motionRef={motionRef}/>
 
-    {plant.stations.map((station,i) => {
-      const state = stationStates.get(station.id)!
-      const aggregateRisk = risks.get(station.id)?.uncoveredProbability ?? 0
+    <RobotArm position={[xs[0]-.45,.06,-2.4]} stationIndex={0} motionRef={motionRef} trial={trial} sparksDisabled={mobile||reducedMotion} phaseOffset={0}/>
+    <RobotArm position={[xs[0]+.45,.06,2.4]} stationIndex={0} motionRef={motionRef} trial={trial} mirror sparksDisabled={mobile||reducedMotion} phaseOffset={.17}/>
+    <RobotArm position={[xs[1],.06,-2.4]} stationIndex={1} motionRef={motionRef} trial={trial} sparksDisabled={mobile||reducedMotion} phaseOffset={.33}/>
+    <TorqueEffect x={xs[7]} stationIndex={7} motionRef={motionRef} trial={trial} reducedMotion={reducedMotion}/>
+
+    {plant.stations.map((station,i)=>{
+      const state=stationStates.get(station.id)!
+      const aggregateRisk=risks.get(station.id)?.uncoveredProbability??0
       return <Workcell
         key={station.id}
         station={station}
+        stationIndex={i}
         x={xs[i]}
         state={state}
         aggregateRisk={aggregateRisk}
+        redLight={redLightIndices.includes(i)}
+        motionRef={motionRef}
+        trial={trial}
       />
     })}
 
     <ContactShadows position={[0,.02,0]} opacity={.38} scale={46} blur={2.6} far={12}/>
-    {!mobile && !reducedMotion && <EffectComposer multisampling={0}>
-      <Bloom intensity={.45} luminanceThreshold={1.15} luminanceSmoothing={.18} mipmapBlur/>
+    {!mobile&&!reducedMotion&&<EffectComposer multisampling={0}>
+      <Bloom intensity={.48} luminanceThreshold={1.12} luminanceSmoothing={.18} mipmapBlur/>
     </EffectComposer>}
 
     <OrbitControls
@@ -390,10 +1076,10 @@ function FactoryWorld({ result, trial, shift, seed, reducedMotion }: { result: S
       target={[0,.9,0]}
       minDistance={24}
       maxDistance={46}
-      minPolarAngle={Math.PI * .22}
-      maxPolarAngle={Math.PI * .42}
-      minAzimuthAngle={-Math.PI * .22}
-      maxAzimuthAngle={Math.PI * .22}
+      minPolarAngle={Math.PI*.22}
+      maxPolarAngle={Math.PI*.42}
+      minAzimuthAngle={-Math.PI*.22}
+      maxAzimuthAngle={Math.PI*.22}
       enablePan={false}
       dampingFactor={.075}
       enableDamping
@@ -409,20 +1095,20 @@ export default function FactoryFloorScene({
   active,
   reducedMotion,
 }: {
-  result: SimResult
-  trial: RepresentativeTrial
-  shift: Shift
-  seed: number
-  active: boolean
-  reducedMotion: boolean
+  result:SimResult
+  trial:RepresentativeTrial
+  shift:Shift
+  seed:number
+  active:boolean
+  reducedMotion:boolean
 }) {
   return <Canvas
     className="factory-canvas"
     shadows
     dpr={[1,1.5]}
-    frameloop={!active ? 'never' : reducedMotion ? 'demand' : 'always'}
-    camera={{ position: [24,18,24], fov: 30, near: .1, far: 100 }}
-    gl={{ antialias: true, powerPreference: 'high-performance' }}
+    frameloop={!active?'never':reducedMotion?'demand':'always'}
+    camera={{position:[24,18,24],fov:30,near:.1,far:100}}
+    gl={{antialias:true,powerPreference:'high-performance'}}
   >
     <FactoryWorld result={result} trial={trial} shift={shift} seed={seed} reducedMotion={reducedMotion}/>
   </Canvas>
