@@ -25,7 +25,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run check:assets
       - run: npm test
-      - run: npm run build 2>&1 | tee build.log
+      - run: set -o pipefail; npm run build 2>&1 | tee build.log
       - run: npm run check:runtime-assets
       - run: npm install --no-save @playwright/test@1.56.1
       - run: npx playwright install --with-deps chromium
