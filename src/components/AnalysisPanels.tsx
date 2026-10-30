@@ -66,6 +66,12 @@ export function AnalysisPanels({ baseline, result }: { baseline: SimResult; resu
   return <section id="analysis" className="content-section">
     <SectionHeading eyebrow="CONSTRAINT REVEAL" title="The headline number is only useful if you can explain it." body="ShiftTwin shows the recurring bottleneck, the uncertainty distribution, and a sensitivity view of what changed." />
 
+    <div className="credibility-strip">
+      <GlassPanel><span>EXPECTED SHORTFALL</span><strong>{result.expectedShortfall.toFixed(2)}</strong><small>person-shifts / day</small></GlassPanel>
+      <GlassPanel><span>STATION-SHIFT COVERAGE</span><strong>{result.stationShiftCoverage.toFixed(1)}%</strong><small>complete coverage</small></GlassPanel>
+      <GlassPanel className="uncertainty-card"><span>BATCH UNCERTAINTY</span><strong>{result.uncertaintyBand.p10.toFixed(1)}–{result.uncertaintyBand.p90.toFixed(1)}%</strong><small>p10–p90 across {result.uncertaintyBand.batches} batches</small><div className="uncertainty-track"><i style={{left:`${result.uncertaintyBand.p10}%`,width:`${Math.max(.5,result.uncertaintyBand.p90-result.uncertaintyBand.p10)}%`}}/><b style={{left:`${result.readiness}%`}}/></div></GlassPanel>
+    </div>
+
     <GlassPanel className="constraint-card">
       <div className="constraint-icon"><Icon name={w.uncoveredProbability>=20?'alert':'activity'} size={21}/></div>
       <div className="constraint-main">

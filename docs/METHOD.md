@@ -119,7 +119,7 @@ Every displayed before/after intervention pair is re-simulated:
 
 The optimizer evaluates cross-training, safe shift rebalancing, temporary relief and a combined plan. The recommendation is the highest verified readiness result, with shorter lead time used only as a tie-break.
 
-Phase 1 retains the conservative demand-relief approximation for overtime. A later model revision replaces it with explicit holdover hours.
+v1.4 replaces the earlier demand-relief approximation with the explicit capped holdover model described below.
 
 ## Shapley attribution
 
@@ -152,5 +152,48 @@ The demo does **not** claim legal compliance.
 - no stochastic demand process beyond the user-selected scenario;
 - renewal rate is a scenario assumption, not an empirical forecast;
 - training quality and worker preference are not modeled;
-- overtime remains deliberately approximate in v1.1 Phase 1;
+- temporary holdovers are fractional planning abstractions rather than detailed working-time schedules;
 - readiness measures staffing feasibility, not production throughput or safety performance.
+
+
+## v1.4 model hardening
+
+All headline scenario and intervention results use **5,000 Monte Carlo trials**. Timeline points and Shapley attribution now use the same displayed sample basis rather than mixing 600/700-trial explanatory numbers with 5,000-trial headline values.
+
+Alongside full-coverage probability, ShiftTwin reports:
+
+- **Expected shortfall:** mean number of missing qualified person-station assignments across the three shifts per simulated day.
+- **Station-shift coverage:** share of station/shift combinations that are completely covered.
+- **Batch uncertainty band:** p10-p90 readiness across 50 deterministic batches of the displayed Monte Carlo run. This is a stability diagnostic for the simulation estimate, not a causal or empirical confidence interval.
+
+### Temporary holdover model
+
+The previous "5% demand relief" approximation has been removed. Temporary capacity now uses explicit adjacent-shift holdovers:
+
+- at most 3 qualified holdovers are considered;
+- a holdover can cover at most 25% of the target shift, corresponding to <=2 h of an 8 h shift;
+- this represents a 10 h/day ceiling for the source worker;
+- holdovers are never treated as permanent staffing capacity.
+
+The holdover contribution is represented as deterministic fractional exposure across common-random-number trials, so it cannot silently become a full extra worker.
+
+## v1.4 visualization and camera model
+
+The living factory was rebuilt as modular components under `src/factory/`. The previous 1,775-line scene file and mirror-sourced GLB bundle were retired.
+
+Camera behavior is shot-driven. Six named shots define purpose, offset, target, FOV and duration: `establishing`, `craneIn`, `bottleneckLow`, `queueTrack`, `healHold`, and `pullBack`. Camera movement uses Drei CameraControls `setLookAt` transitions instead of per-frame constant lerps. Portrait layouts apply additional distance/FOV padding, and user input is disabled during run/heal sequences.
+
+The query string `?shot=<name>&freeze=1` renders deterministic shot states for visual regression tests. CI captures all six shots at 1440x900 and 390x844.
+
+Apply Plan now scrolls the factory into view and waits for at least 60% intersection (with a bounded fallback) before the recovery sequence begins.
+
+## v1.4 visual asset policy
+
+The public scene now uses self-authored procedural Three.js geometry for the hall, vehicles, workers, robots, stations and andons. This removes the previous third-party mirror provenance issue, eliminates the robot external-texture 404, and reduces runtime model payload to 0 MiB. Any future imported GLB/GLTF must embed its dependent image/buffer URIs and stay within the 0.50 MiB model budget.
+
+## Known limitations added in v1.4
+
+- The procedural factory is an explanatory digital-twin visualization, not a CAD-accurate production line.
+- Batch p10-p90 measures Monte Carlo estimate stability; it is not uncertainty in real-world absence-rate parameters.
+- Holdovers are modeled as fractional target-shift exposure and do not include detailed labor agreement, break, fatigue, or worker-preference constraints.
+- The line-rate visualization remains a bottleneck staffing model rather than a discrete-event manufacturing validated against plant telemetry.

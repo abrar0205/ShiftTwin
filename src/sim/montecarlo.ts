@@ -14,7 +14,7 @@ import type {
 
 const SHIFTS: Shift[] = ['Early', 'Late', 'Night']
 const z80 = 1.2815515655446004
-const ATTRIBUTION_SAMPLES = 700
+const ATTRIBUTION_SAMPLES = 5000
 export const BASE_LINE_RATE_JPH = 60
 export const SHIFT_HOURS = 8
 
@@ -58,6 +58,9 @@ function emptyResult(plant: Plant, scenario: Scenario, samples: number): SimResu
   return {
     samples,
     readiness: 0,
+    expectedShortfall: 0,
+    stationShiftCoverage: 0,
+    uncertaintyBand: { p10: 0, p90: 0, batches: 50 },
     p10: 0,
     p90: 0,
     shiftResults: [],
@@ -207,6 +210,11 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
   const stationUncovered = new Map<string, number>()
   const firstFailure = new Map<string, number>()
   const histogram = new Map<number, number>()
+  let totalPersonShortfall = 0
+  let totalUncoveredStationShifts = 0
+  const batchCount = 50
+  const batchFull = new Array(batchCount).fill(0)
+  const batchTrials = new Array(batchCount).fill(0)
 
   for (let sample = 0; sample < samples; sample++) {
     let allShifts = true
@@ -223,7 +231,10 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
 
       totalUncovered += solved.uncoveredStationIds.length
       shiftUncoveredSum[shift] += solved.uncoveredStationIds.length
-      shortfalls[shift].push(Object.values(solved.deficits).reduce((sum, value) => sum + value, 0))
+      totalUncoveredStationShifts += solved.uncoveredStationIds.length
+      const personShortfall = Object.values(solved.deficits).reduce((sum, value) => sum + value, 0)
+      totalPersonShortfall += personShortfall
+      shortfalls[shift].push(personShortfall)
 
       let firstKey: string | null = null
       let largestDeficit = -1
@@ -239,15 +250,24 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
       if (firstKey) firstFailure.set(firstKey, (firstFailure.get(firstKey) ?? 0) + 1)
     }
 
-    if (allShifts) plantFull++
+    const batch = Math.min(batchCount - 1, Math.floor(sample * batchCount / samples))
+    batchTrials[batch]++
+    if (allShifts) {
+      plantFull++
+      batchFull[batch]++
+    }
     histogram.set(totalUncovered, (histogram.get(totalUncovered) ?? 0) + 1)
   }
 
   const readiness = 100 * plantFull / samples
-  const p = plantFull / samples
-  const se = Math.sqrt(Math.max(1e-12, p * (1 - p) / samples))
-  const p10 = Math.max(0, 100 * (p - z80 * se))
-  const p90 = Math.min(100, 100 * (p + z80 * se))
+  const expectedShortfall = totalPersonShortfall / samples
+  const stationShiftCoverage = 100 * (1 - totalUncoveredStationShifts / (samples * plant.stations.length * SHIFTS.length))
+  const batchReadiness = batchFull
+    .map((full, index) => batchTrials[index] ? 100 * full / batchTrials[index] : readiness)
+    .sort((a,b)=>a-b)
+  const quantile = (q:number) => batchReadiness[Math.min(batchReadiness.length-1, Math.max(0, Math.floor(q*(batchReadiness.length-1))))] ?? readiness
+  const p10 = quantile(.10)
+  const p90 = quantile(.90)
   const totalFailures = Math.max(1, samples - plantFull)
 
   const stationRisks: StationRisk[] = []
@@ -311,6 +331,9 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
   return {
     samples,
     readiness,
+    expectedShortfall,
+    stationShiftCoverage,
+    uncertaintyBand: { p10, p90, batches: batchCount },
     p10,
     p90,
     shiftResults: SHIFTS.map(shift => ({
@@ -380,7 +403,7 @@ export function withAttribution(plant: Plant, baseline: Scenario, scenario: Scen
   return { ...result, attribution: shapleyAttribution(plant, baseline, scenario, result) }
 }
 
-export function buildTimeline(plant: Plant, scenario: Scenario, samples = 600): TimelinePoint[] {
+export function buildTimeline(plant: Plant, scenario: Scenario, samples = 5000): TimelinePoint[] {
   const points: TimelinePoint[] = []
   for (let week = 0; week <= 8; week++) {
     const r = simulate(plant, { ...scenario, week, certHorizon: Math.max(scenario.certHorizon, week) }, samples)

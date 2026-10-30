@@ -2,38 +2,43 @@ name: CI and deploy
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: shifttwin-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
-          cache-dependency-path: package-lock.json
       - run: npm ci --no-audit --no-fund
-      - run: npm test
-      - run: npm run build
       - run: npm run check:assets
+      - run: npm test
+      - run: set -o pipefail; npm run build 2>&1 | tee build.log
       - run: npm run check:runtime-assets
-      - uses: actions/configure-pages@v5
-        if: github.ref == 'refs/heads/main'
+      - run: npm install --no-save @playwright/test@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          enablement: true
+          name: phase3-visual-evidence
+          path: |
+            build.log
+            test-results/shots
+            playwright-report
+          if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@v3
         if: github.ref == 'refs/heads/main'
         with:
@@ -41,12 +46,17 @@ jobs:
 
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: test
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
-      - name: Deploy tested artifact
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4

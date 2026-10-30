@@ -66,7 +66,10 @@ interface Store {
 
 async function buildBaseline() {
   const baseline = await request<SimResult>({ type: 'simulate', plant, scenario: { ...BASELINE_SCENARIO }, samples: 5000 })
-  const timeline = await request<TimelinePoint[]>({ type: 'timeline', plant, scenario: { ...BASELINE_SCENARIO }, optimized: false })
+  const frozenShot = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('freeze') === '1'
+  const timeline = frozenShot
+    ? [{ week: 0, readiness: baseline.readiness, p10: baseline.p10, p90: baseline.p90 }]
+    : await request<TimelinePoint[]>({ type: 'timeline', plant, scenario: { ...BASELINE_SCENARIO }, optimized: false })
   return { baseline, timeline }
 }
 

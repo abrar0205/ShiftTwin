@@ -26,6 +26,8 @@ export interface WorkerRecord {
   id: number
   shift: Shift
   absenceFactor: number
+  /** Temporary holdover capacity: worker can cover at most this fraction of target-shift trials. */
+  holdoverFraction?: number
   qualifications: Qualification[]
 }
 
@@ -119,6 +121,12 @@ export interface RepresentativeTrialSet {
 export interface SimResult {
   samples: number
   readiness: number
+  /** Expected missing qualified positions across all three shifts per simulated day. */
+  expectedShortfall: number
+  /** Share of station-shifts with complete qualified coverage. */
+  stationShiftCoverage: number
+  /** p10-p90 of readiness across 50 deterministic 100-trial batches. */
+  uncertaintyBand: { p10: number; p90: number; batches: number }
   p10: number
   p90: number
   shiftResults: ShiftResult[]

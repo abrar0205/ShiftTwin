@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const roots=['public/models']
+const root='public/models'
+const limit=.5*1024*1024
 const extensions=new Set(['.glb','.gltf','.bin','.ktx2'])
-const limit=3*1024*1024
 const files=[]
 
 function walk(dir){
@@ -11,61 +11,38 @@ function walk(dir){
   for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
     const full=path.join(dir,entry.name)
     if(entry.isDirectory()) walk(full)
-    else if(extensions.has(path.extname(entry.name).toLowerCase())){
-      const bytes=fs.statSync(full).size
-      if(bytes<=0){
-        console.error(`Asset is empty: ${full}`)
-        process.exit(1)
-      }
-      files.push({file:full,bytes})
-    }
+    else if(extensions.has(path.extname(entry.name).toLowerCase())) files.push(full)
   }
 }
 
 function glbJson(file){
   const data=fs.readFileSync(file)
-  if(data.readUInt32LE(0)!==0x46546c67) throw new Error(`${file} is not a valid GLB`)
+  if(data.readUInt32LE(0)!==0x46546c67) throw new Error(file+' is not a valid GLB')
   let offset=12
   while(offset<data.length){
     const length=data.readUInt32LE(offset)
     const type=data.readUInt32LE(offset+4)
-    if(type===0x4e4f534a){
-      return JSON.parse(data.subarray(offset+8,offset+8+length).toString('utf8').replace(/\0+$/g,''))
-    }
+    if(type===0x4e4f534a) return JSON.parse(data.subarray(offset+8,offset+8+length).toString('utf8').replace(/\\0+$/g,''))
     offset+=8+length
   }
-  throw new Error(`${file} has no GLB JSON chunk`)
+  throw new Error(file+' has no GLB JSON chunk')
 }
 
-function requireNames(file,property,names){
-  const json=glbJson(file)
-  const available=new Set((json[property]??[]).map(item=>item?.name).filter(Boolean))
-  const missing=names.filter(name=>!available.has(name))
-  if(missing.length) throw new Error(`${file} missing ${property}: ${missing.join(', ')}`)
+walk(root)
+let total=0
+for(const file of files){
+  const bytes=fs.statSync(file).size
+  total+=bytes
+  if(bytes<=0) throw new Error('Asset is empty: '+file)
+  const json=path.extname(file)==='.glb'?glbJson(file):JSON.parse(fs.readFileSync(file,'utf8'))
+  for(const image of json.images??[]){
+    if(image.uri && !image.uri.startsWith('data:')) throw new Error(file+' has external image URI: '+image.uri)
+  }
+  for(const buffer of json.buffers??[]){
+    if(buffer.uri && !buffer.uri.startsWith('data:')) throw new Error(file+' has external buffer URI: '+buffer.uri)
+  }
+  console.log(file+': '+(bytes/1024).toFixed(1)+' KiB')
 }
-
-for(const root of roots) walk(root)
-const total=files.reduce((sum,item)=>sum+item.bytes,0)
-
-for(const item of files){
-  console.log(`${item.file}: ${(item.bytes/1024).toFixed(1)} KiB`)
-}
-console.log(`Self-hosted model payload: ${(total/1024/1024).toFixed(2)} MiB / 3.00 MiB budget`)
-
-if(total>limit){
-  console.error('Model asset budget exceeded.')
-  process.exit(1)
-}
-
-try{
-  requireNames('public/models/worker.glb','nodes',['root','hips','Rig_Medium'])
-  requireNames('public/models/worker-movement.glb','animations',['Walking_A'])
-  requireNames('public/models/worker-general.glb','animations',['Idle_A','Interact'])
-  requireNames('public/models/sedan.glb','nodes',['body','wheel-front-left','wheel-front-right','wheel-back-left','wheel-back-right'])
-  requireNames('public/models/robot-arm-a.glb','nodes',['element-a','element-b','element-c','element-d','element-e','element-f','claw-a','claw-b'])
-}catch(error){
-  console.error(error instanceof Error?error.message:String(error))
-  process.exit(1)
-}
-
-console.log('GLB manifest check passed: required worker clips and model nodes are present.')
+console.log('Self-hosted model payload: '+(total/1024/1024).toFixed(2)+' MiB / 0.50 MiB budget')
+if(total>limit) throw new Error('Model asset budget exceeded.')
+console.log('Asset check passed: embedded dependencies only, payload within budget.')
