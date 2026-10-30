@@ -53,8 +53,10 @@ export function FactoryFloorSection({result,reducedMotion}:{result:SimResult;red
   const lastRun=useRef(runId), lastHeal=useRef(healId), lastSkip=useRef(sequenceSkipId)
   const timers=useRef<number[]>([])
   const weakest=useMemo(()=>[...result.shiftResults].sort((a,b)=>a.coverageProbability-b.coverageProbability)[0]?.shift??'Early',[result])
+  const requestedShot=typeof window!=='undefined'?new URLSearchParams(window.location.search).get('shot'):null
+  const forceFailureShot=requestedShot==='bottleneckLow'||requestedShot==='queueTrack'||requestedShot==='healHold'
   const [shift,setShift]=useState<Shift>(weakest)
-  const [trialMode,setTrialMode]=useState<'typical'|'failure'>(()=>result.trialSets[weakest].failureRate>=5&&result.trialSets[weakest].failureTrial?'failure':'typical')
+  const [trialMode,setTrialMode]=useState<'typical'|'failure'>(()=>(forceFailureShot&&result.trialSets[weakest].failureTrial)||(result.trialSets[weakest].failureRate>=5&&result.trialSets[weakest].failureTrial)?'failure':'typical')
   const [mode,setMode]=useState<'idle'|'run'|'heal'>('idle')
   const [hudTrial,setHudTrial]=useState(()=>trialFor(result,weakest,trialMode))
   const [webgl,setWebgl]=useState<boolean|null>(null)
@@ -72,8 +74,8 @@ export function FactoryFloorSection({result,reducedMotion}:{result:SimResult;red
   useEffect(()=>{setShift(weakest)},[weakest])
   useEffect(()=>{
     const set=result.trialSets[shift]
-    setTrialMode(set.failureRate>=5&&set.failureTrial?'failure':'typical')
-  },[result,shift])
+    setTrialMode((forceFailureShot&&set.failureTrial)||(set.failureRate>=5&&set.failureTrial)?'failure':'typical')
+  },[result,shift,forceFailureShot])
   useEffect(()=>{if(mode==='idle')setHudTrial(trial)},[trial,mode])
 
   useEffect(()=>{
