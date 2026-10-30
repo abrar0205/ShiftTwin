@@ -133,3 +133,7 @@ The UI renders simulation outputs; it does not invent KPI values.
 ## Scope
 
 This is a portfolio simulation, not a production workforce-management or legal-compliance system. It demonstrates a decision-support concept using synthetic data and simplified manufacturing assumptions.
+
+## Enterprise operating model
+
+See [Operating model](docs/OPERATING_MODEL.md) for the proposed HRIS, attendance, certification and production-planning integration, data quality contracts, responsible users, privacy governance, and known limitations. The public demo uses synthetic data only.
