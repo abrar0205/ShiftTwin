@@ -29,7 +29,7 @@ The sedan is deliberately generic. ShiftTwin adds neutral runtime material treat
 - **Visual:** `robot-arm-a.glb` from Kenney Factory Kit
 - **Creator:** Kenney
 - **License:** CC0 1.0
-- **Source path used for the vendored file:** a source-identical Factory Kit copy in `HunterHo07/O1-3d-Assets-1`
+- **Source path used for the vendored file:** a Kenney Factory Kit copy in `HunterHo07/O1-3d-Assets-1`
 - **File:** `public/models/robot-arm-a.glb`
 
 The model contains a hierarchical base, six arm elements and two claw meshes. ShiftTwin drives those joints from the existing station-work cycle; the imported arm does not play a decorative canned sequence.

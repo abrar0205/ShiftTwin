@@ -48,7 +48,8 @@ The headline score is not scripted. It is the Monte Carlo estimate of full criti
 - eight-week resilience outlook;
 - Vitest checks for determinism, matching, monotonicity and line-motion invariants;
 - a lazy-loaded 3D Living Factory whose workers, andons, station dwell, queues and starvation states are tied to representative Monte Carlo trials;
-- skippable scenario and plan-heal sequences that focus the camera on the actual bottleneck without changing the underlying model state.
+- skippable scenario and plan-heal sequences that focus the camera on the actual bottleneck without changing the underlying model state;
+- real self-hosted GLB vehicles, animated workers and articulated industrial robots while preserving the model-driven motion layer.
 
 ## Living Factory
 
@@ -56,7 +57,7 @@ The 3D floor is a model view rather than decorative animation. A selected repres
 
 The scenario sequence spotlights the actual bottleneck, while Apply Plan keeps the scenario visible and animates the verified intervention before committing the new state. Plan comparisons use 5,000 verification samples.
 
-The visual layer uses self-hosted CC0 KayKit worker/animation assets and a generic Kenney sedan, with a procedural industrial hall, reflective concrete and adaptive desktop post-processing. No manufacturer logos or external runtime asset hosts are used.
+The visual layer uses self-hosted CC0 KayKit worker/animation assets plus generic Kenney sedan and industrial-robot models. The hall is self-authored procedural geometry with reflective concrete, structural steel and glazing; desktop rendering adds AgX tone mapping and adaptive AO/bloom/antialiasing. No manufacturer logos or external runtime asset hosts are used.
 
 See [docs/ASSETS.md](docs/ASSETS.md) for provenance and license notes.
 
