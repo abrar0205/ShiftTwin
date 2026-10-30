@@ -162,6 +162,15 @@ function tryInject(state: LineMotionState, trial: RepresentativeTrial) {
   state.nextInjectAt = state.time + visualTaktSeconds(trial.targetLineRateJPH)
 }
 
+function refreshMovingSegments(state: LineMotionState) {
+  state.movingSegments.clear()
+  for (const car of state.cars.values()) {
+    if (!car.moving) continue
+    if (car.fromSlot >= 0 && car.fromSlot < state.slots.length) state.movingSegments.add(car.fromSlot)
+    if (car.slot >= 0 && car.slot < state.slots.length) state.movingSegments.add(car.slot)
+  }
+}
+
 function updateBottleneckState(state: LineMotionState, trial: RepresentativeTrial) {
   const index = state.bottleneckIndex
   const factor = trial.stations[index]?.throughputFactor ?? 1
@@ -181,10 +190,10 @@ export function advanceLineMotion(
 ) {
   const dt = Math.max(0, Math.min(deltaSeconds, 0.1))
   state.time += dt
-  state.movingSegments.clear()
   finishMoves(state, trial)
   tryAdvance(state, trial)
   tryInject(state, trial)
+  refreshMovingSegments(state)
   updateBottleneckState(state, trial)
   return state
 }
