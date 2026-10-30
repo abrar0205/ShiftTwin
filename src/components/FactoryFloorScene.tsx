@@ -1286,22 +1286,27 @@ function AGVLoop({
 }) {
   const groups=useRef<Array<THREE.Group|null>>([])
   const beacons=useRef<Array<THREE.MeshStandardMaterial|null>>([])
-  const curve=useMemo(()=>new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-17,.28,4.55),
-    new THREE.Vector3(-9,.28,5.0),
-    new THREE.Vector3(0,.28,4.75),
-    new THREE.Vector3(9,.28,4.9),
-    new THREE.Vector3(15,.28,4.25),
-    new THREE.Vector3(14,.28,3.0),
-    new THREE.Vector3(7,.28,2.75),
-    new THREE.Vector3(-2,.28,3.05),
-    new THREE.Vector3(-12,.28,3.0),
-    new THREE.Vector3(-17,.28,4.55),
-  ],true,'catmullrom',.2),[])
+  const routePoints=useMemo(()=>[
+    [-17,4.55],[-9,5.0],[0,4.75],[9,4.9],[15,4.25],
+    [14,3.0],[7,2.75],[-2,3.05],[-12,3.0],[-17,4.55],
+  ] as Array<[number,number]>,[])
+  const curve=useMemo(()=>new THREE.CatmullRomCurve3(
+    routePoints.map(([x,z])=>new THREE.Vector3(x,.28,z)),
+    true,'catmullrom',.2,
+  ),[routePoints])
+  const decalCurve=useMemo(()=>new THREE.CatmullRomCurve3(
+    routePoints.map(([x,z])=>new THREE.Vector3(x,.045,z)),
+    true,'catmullrom',.2,
+  ),[routePoints])
+  const decalGeometry=useMemo(()=>new THREE.TubeGeometry(decalCurve,96,.032,4,true),[decalCurve])
   const phaseToT=useMemo(()=>buildCurveClock(curve),[curve])
+  const point=useMemo(()=>new THREE.Vector3(),[])
+  const tangent=useMemo(()=>new THREE.Vector3(),[])
   const materialFlowIndex=trial.stations.findIndex(s=>s.stationId==='material-flow')
   const materialShort=materialFlowIndex>=0 && trial.stations[materialFlowIndex].deficit>0
   const dockT=.43
+
+  useEffect(()=>()=>decalGeometry.dispose(),[decalGeometry])
 
   useFrame(()=>{
     const time=motionRef.current.time
@@ -1315,8 +1320,8 @@ function AGVLoop({
           ? .14+i*.26
           : (time*.035+i/3)%1
       const t=materialShort?phase:phaseToT(phase)
-      const point=curve.getPointAt(((t%1)+1)%1)
-      const tangent=curve.getTangentAt(((t%1)+1)%1)
+      curve.getPointAt(((t%1)+1)%1,point)
+      curve.getTangentAt(((t%1)+1)%1,tangent)
       group.position.copy(point)
       group.rotation.y=-Math.atan2(tangent.z,tangent.x)
       const pulse=(Math.sin(time*5+i)+1)/2
@@ -1326,15 +1331,10 @@ function AGVLoop({
     }
   })
 
-  const pathPoints=useMemo(()=>curve.getPoints(100),[curve])
-  const pathGeometry=useMemo(()=>new THREE.BufferGeometry().setFromPoints(pathPoints),[pathPoints])
-  const pathMaterial=useMemo(()=>new THREE.LineBasicMaterial({color:'#826c25',transparent:true,opacity:.55}),[])
-  const pathLine=useMemo(()=>new THREE.Line(pathGeometry,pathMaterial),[pathGeometry,pathMaterial])
-
-  useEffect(()=>()=>{pathGeometry.dispose();pathMaterial.dispose()},[pathGeometry,pathMaterial])
-
   return <>
-    <primitive object={pathLine}/>
+    <mesh geometry={decalGeometry}>
+      <meshBasicMaterial color="#8a7428" transparent opacity={.34} depthWrite={false}/>
+    </mesh>
     {[0,1,2].map(i=><group key={i} ref={group=>{groups.current[i]=group}}>
       <mesh castShadow>
         <boxGeometry args={[1.05,.32,.72]}/>
@@ -1376,22 +1376,133 @@ function AlarmStrip({
 
 function OverheadLights({ night }: { night: boolean }) {
   return <>
-    {[-14,-7,0,7,14].map((x,i) => <mesh position={[x,6,0]} key={i}>
-      <boxGeometry args={[4.7,.05,.18]}/>
-      <meshStandardMaterial color={night ? '#b9d8ee' : '#eef5f7'} emissive={night ? '#8cbce2' : '#d6e4ea'} emissiveIntensity={night ? 2.2 : .72} toneMapped={false}/>
-    </mesh>)}
+    {[-14,-7,0,7,14].map(x => <group key={x}>
+      <mesh position={[x,6.25,0]}>
+        <boxGeometry args={[4.7,.05,.18]}/>
+        <meshStandardMaterial color={night ? '#b9d8ee' : '#eef5f7'} emissive={night ? '#8cbce2' : '#d6e4ea'} emissiveIntensity={night ? 2.2 : .72} toneMapped={false}/>
+      </mesh>
+      <mesh position={[x-1.7,6.72,0]}>
+        <cylinderGeometry args={[.018,.018,.94,6]}/>
+        <meshStandardMaterial color="#4d565e" roughness={.6} metalness={.5}/>
+      </mesh>
+      <mesh position={[x+1.7,6.72,0]}>
+        <cylinderGeometry args={[.018,.018,.94,6]}/>
+        <meshStandardMaterial color="#4d565e" roughness={.6} metalness={.5}/>
+      </mesh>
+    </group>)}
   </>
+}
+
+function CameraDirector({
+  xs,
+  bottleneckIndex,
+  sequenceRef,
+  controlsRef,
+  mobile,
+  reducedMotion,
+}: {
+  xs:number[]
+  bottleneckIndex:number
+  sequenceRef:SequenceRef
+  controlsRef:OrbitRef
+  mobile:boolean
+  reducedMotion:boolean
+}) {
+  const camera=useThree(state=>state.camera)
+  const initialized=useRef(false)
+  const settled=useRef(false)
+  const widePosition=useMemo(()=>new THREE.Vector3(24,18,24),[])
+  const wideTarget=useMemo(()=>new THREE.Vector3(0,.9,0),[])
+  const focusPosition=useMemo(()=>{
+    const x=xs[bottleneckIndex]??0
+    return mobile
+      ? new THREE.Vector3(x+5.2,6.4,8.4)
+      : new THREE.Vector3(x+5.6,5.4,7.6)
+  },[bottleneckIndex,mobile,xs])
+  const focusTarget=useMemo(()=>new THREE.Vector3(xs[bottleneckIndex]??0,1.05,0),[bottleneckIndex,xs])
+  const desiredPosition=useMemo(()=>new THREE.Vector3(),[])
+  const desiredTarget=useMemo(()=>new THREE.Vector3(),[])
+
+  useFrame(()=>{
+    const controls=controlsRef.current
+    const seq=sequenceRef.current
+
+    if(!initialized.current && mobile){
+      initialized.current=true
+      camera.position.copy(focusPosition)
+      if(controls){
+        controls.target.copy(focusTarget)
+        controls.update()
+      }else{
+        camera.lookAt(focusTarget)
+      }
+    }
+
+    const needsSettle=!seq.active && seq.progress>=1 && seq.kind!=='idle' && !settled.current
+    if(!seq.active && !needsSettle){
+      if(controls) controls.enabled=!reducedMotion
+      return
+    }
+    if(seq.progress<1) settled.current=false
+
+    let focusBlend=0
+    if(seq.kind==='run'){
+      focusBlend=Math.max(0,Math.min(1,(seq.progress-.48)/.34))
+      focusBlend=easeInOutCubic(focusBlend)
+    }else if(seq.kind==='heal'){
+      if(seq.progress<.64) focusBlend=1
+      else focusBlend=1-easeInOutCubic(Math.max(0,Math.min(1,(seq.progress-.64)/.31)))
+    }
+
+    desiredPosition.copy(widePosition).lerp(focusPosition,focusBlend)
+    desiredTarget.copy(wideTarget).lerp(focusTarget,focusBlend)
+    camera.position.lerp(desiredPosition,.12)
+
+    if(controls){
+      controls.enabled=false
+      controls.target.lerp(desiredTarget,.14)
+      controls.update()
+    }else{
+      camera.lookAt(desiredTarget)
+    }
+
+    if(needsSettle){
+      camera.position.copy(desiredPosition)
+      if(controls){
+        controls.target.copy(desiredTarget)
+        controls.enabled=!reducedMotion
+        controls.update()
+      }
+      settled.current=true
+    }
+  },20)
+
+  return null
 }
 
 function FactoryWorld({
   result,
   trial,
+  previousTrial,
+  healTrial,
+  failureRate,
+  healWeek,
+  runId,
+  healId,
+  skipId,
   shift,
   seed,
   reducedMotion,
 }: {
   result:SimResult
   trial:RepresentativeTrial
+  previousTrial:RepresentativeTrial | null
+  healTrial:RepresentativeTrial | null
+  failureRate:number
+  healWeek:number | null
+  runId:number
+  healId:number
+  skipId:number
   shift:Shift
   seed:number
   reducedMotion:boolean
@@ -1399,12 +1510,24 @@ function FactoryWorld({
   const plant=useMemo(()=>generatePlant(seed),[seed])
   const xs=useMemo(()=>plant.stations.map((_s,i)=>-16.5+i*3),[plant.stations])
   const motionRef=useRef<LineMotionState>(createLineMotion(trial))
+  const sequenceRef=useRef<SceneSequence>({kind:'idle',active:false,progress:1,elapsed:0})
+  const controlsRef=useRef<ElementRef<typeof OrbitControls> | null>(null)
   const stationStates=useMemo(()=>new Map(trial.stations.map(state=>[state.stationId,state])),[trial])
   const risks=useMemo(
     ()=>new Map(result.stationRisks.filter(r=>r.shift===shift).map(r=>[r.stationId,r])),
     [result,shift],
   )
   const mobile=typeof window!=='undefined'&&window.matchMedia(MOBILE_QUERY).matches
+  const bottleneckIndex=useMemo(()=>trial.stations.reduce((best,station,index,all)=>{
+    const current=all[best]
+    if(station.deficit>current.deficit) return index
+    if(station.deficit===current.deficit && station.throughputFactor<current.throughputFactor) return index
+    return best
+  },0),[trial])
+  const bottleneckState=trial.stations[bottleneckIndex]
+  const hasBottleneck=Boolean(bottleneckState && bottleneckState.deficit>0)
+  const healState=healTrial?.stations.find(station=>station.stationId===bottleneckState?.stationId) ?? null
+  const healAddsWorker=Boolean(hasBottleneck && healState && healState.assigned>bottleneckState.assigned)
   const redLightIndices=useMemo(
     ()=>trial.stations
       .map((station,index)=>({station,index}))
@@ -1416,15 +1539,32 @@ function FactoryWorld({
   )
 
   return <>
-    <MotionController trial={trial} motionRef={motionRef} reducedMotion={reducedMotion}/>
-    <ShiftLighting shift={shift} reducedMotion={reducedMotion}/>
+    <MotionController
+      trial={trial}
+      previousTrial={previousTrial}
+      healTrial={healTrial}
+      motionRef={motionRef}
+      sequenceRef={sequenceRef}
+      runId={runId}
+      healId={healId}
+      skipId={skipId}
+      reducedMotion={reducedMotion}
+    />
+    <ShiftLighting shift={shift} reducedMotion={reducedMotion} focus={hasBottleneck} sequenceRef={sequenceRef}/>
     <LocalEnvironment/>
+    <CameraDirector
+      xs={xs}
+      bottleneckIndex={bottleneckIndex}
+      sequenceRef={sequenceRef}
+      controlsRef={controlsRef}
+      mobile={mobile}
+      reducedMotion={reducedMotion}
+    />
 
     <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
       <planeGeometry args={[45,18]}/>
       <meshStandardMaterial color="#0b0f13" roughness={.66} metalness={.14}/>
     </mesh>
-    <gridHelper args={[44,44,'#27313a','#171d22']} position={[0,.012,0]}/>
 
     <AreaZone x={-12} label="BODY SYSTEMS" night={shift==='Night'}/>
     <AreaZone x={0} label="ASSEMBLY" night={shift==='Night'}/>
@@ -1432,19 +1572,38 @@ function FactoryWorld({
 
     <Conveyor xs={xs} motionRef={motionRef}/>
     <CarFleet xs={xs} motionRef={motionRef}/>
-    <TrialWorkers stations={plant.stations} positions={xs} trial={trial} motionRef={motionRef}/>
+    <TrialWorkers stations={plant.stations} positions={xs} trial={trial} motionRef={motionRef} sequenceRef={sequenceRef}/>
+    <HealWorker
+      x={xs[bottleneckIndex]??0}
+      targetZ={1.52}
+      sequenceRef={sequenceRef}
+      enabled={healAddsWorker}
+      week={healWeek}
+    />
     <AGVLoop motionRef={motionRef} trial={trial} reducedMotion={reducedMotion}/>
     <OverheadLights night={shift==='Night'}/>
     <AlarmStrip xs={xs} motionRef={motionRef}/>
+    <StarvationLayer xs={xs} motionRef={motionRef} trial={trial}/>
 
     <RobotArm position={[xs[0]-.45,.06,-2.4]} stationIndex={0} motionRef={motionRef} trial={trial} sparksDisabled={mobile||reducedMotion} phaseOffset={0}/>
     <RobotArm position={[xs[0]+.45,.06,2.4]} stationIndex={0} motionRef={motionRef} trial={trial} mirror sparksDisabled={mobile||reducedMotion} phaseOffset={.17}/>
     <RobotArm position={[xs[1],.06,-2.4]} stationIndex={1} motionRef={motionRef} trial={trial} sparksDisabled={mobile||reducedMotion} phaseOffset={.33}/>
     <TorqueEffect x={xs[7]} stationIndex={7} motionRef={motionRef} trial={trial} reducedMotion={reducedMotion}/>
 
+    {hasBottleneck && <BottleneckSpotlight
+      x={xs[bottleneckIndex]}
+      station={bottleneckState}
+      shift={shift}
+      failureRate={failureRate}
+      sequenceRef={sequenceRef}
+      motionRef={motionRef}
+      healState={healState}
+    />}
+
     {plant.stations.map((station,i)=>{
       const state=stationStates.get(station.id)!
       const aggregateRisk=risks.get(station.id)?.uncoveredProbability??0
+      const targetHealState=healTrial?.stations.find(item=>item.stationId===station.id) ?? null
       return <Workcell
         key={station.id}
         station={station}
@@ -1455,6 +1614,9 @@ function FactoryWorld({
         redLight={redLightIndices.includes(i)}
         motionRef={motionRef}
         trial={trial}
+        sequenceRef={sequenceRef}
+        bottleneck={i===bottleneckIndex && hasBottleneck}
+        healState={targetHealState}
       />
     })}
 
@@ -1464,15 +1626,16 @@ function FactoryWorld({
     </EffectComposer>}
 
     <OrbitControls
+      ref={controlsRef}
       enabled={!reducedMotion}
       makeDefault
       target={[0,.9,0]}
-      minDistance={24}
+      minDistance={mobile?15:24}
       maxDistance={46}
-      minPolarAngle={Math.PI*.22}
-      maxPolarAngle={Math.PI*.42}
-      minAzimuthAngle={-Math.PI*.22}
-      maxAzimuthAngle={Math.PI*.22}
+      minPolarAngle={Math.PI*.20}
+      maxPolarAngle={Math.PI*.44}
+      minAzimuthAngle={-Math.PI*.24}
+      maxAzimuthAngle={Math.PI*.24}
       enablePan={false}
       dampingFactor={.075}
       enableDamping
@@ -1483,6 +1646,13 @@ function FactoryWorld({
 export default function FactoryFloorScene({
   result,
   trial,
+  previousTrial,
+  healTrial,
+  failureRate,
+  healWeek,
+  runId,
+  healId,
+  skipId,
   shift,
   seed,
   active,
@@ -1490,6 +1660,13 @@ export default function FactoryFloorScene({
 }: {
   result:SimResult
   trial:RepresentativeTrial
+  previousTrial:RepresentativeTrial | null
+  healTrial:RepresentativeTrial | null
+  failureRate:number
+  healWeek:number | null
+  runId:number
+  healId:number
+  skipId:number
   shift:Shift
   seed:number
   active:boolean
@@ -1503,6 +1680,19 @@ export default function FactoryFloorScene({
     camera={{position:[24,18,24],fov:30,near:.1,far:100}}
     gl={{antialias:true,powerPreference:'high-performance'}}
   >
-    <FactoryWorld result={result} trial={trial} shift={shift} seed={seed} reducedMotion={reducedMotion}/>
+    <FactoryWorld
+      result={result}
+      trial={trial}
+      previousTrial={previousTrial}
+      healTrial={healTrial}
+      failureRate={failureRate}
+      healWeek={healWeek}
+      runId={runId}
+      healId={healId}
+      skipId={skipId}
+      shift={shift}
+      seed={seed}
+      reducedMotion={reducedMotion}
+    />
   </Canvas>
 }
