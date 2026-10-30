@@ -698,3 +698,35 @@ footer p { margin: 0; color: var(--text-faint); font-size: 8px; text-align: righ
   .factory-cell-chip > i { width:6px; height:6px; }
   .bottleneck-callout { width:205px; }
 }
+
+
+/* v1.4 cinematic focus: keep the process visible, not hidden under dashboard chrome. */
+.factory-shell.sequence-active::before,
+.factory-shell.sequence-active::after {
+  content:""; position:absolute; left:0; right:0; height:7%; z-index:10;
+  background:linear-gradient(180deg,#030609 0%,rgba(3,6,9,.93) 100%);
+  pointer-events:none; animation:factory-letterbox .3s ease-out both;
+}
+.factory-shell.sequence-active::before { top:0; }
+.factory-shell.sequence-active::after { bottom:0; transform:rotate(180deg); animation:none; }
+@keyframes factory-letterbox { from { opacity:0; } to { opacity:1; } }
+.factory-shell.sequence-active .factory-operating-hud > div:not(:first-child),
+.factory-shell.sequence-active .factory-operating-hud > i { display:none; }
+.factory-shell.sequence-active .factory-operating-hud {
+  z-index:12; top:13px; left:20px; border-color:rgba(92,200,255,.3);
+  background:rgba(5,9,14,.94);
+}
+.factory-shell.sequence-active .factory-operating-hud strong { font-size:16px; }
+.factory-shell.sequence-active .factory-sequence-status { z-index:12; top:auto; bottom:14px; }
+.bottleneck-callout { margin-left:160px; }
+@media (max-width:820px) {
+  .factory-shell.sequence-active::before,
+  .factory-shell.sequence-active::after { height:8%; }
+  .bottleneck-callout { margin-left:0; width:min(280px,76vw); }
+  .factory-shell.sequence-active .factory-operating-hud { top:10px; left:10px; width:auto; }
+  .factory-shell.sequence-active .factory-sequence-status { top:auto; bottom:12px; left:10px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .factory-shell.sequence-active::before,
+  .factory-shell.sequence-active::after { animation:none; }
+}
