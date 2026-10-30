@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
 import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
-import { Bloom, EffectComposer } from '@react-three/postprocessing'
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { ContactShadows, Html, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, useGLTF } from '@react-three/drei'
+import { Bloom, EffectComposer, N8AO, SMAA, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
+import { HealWorkerModel, StationWorkerModel } from './FactoryWorkerModel'
 import {
   advanceLineMotion,
   CAR_MOVE_SECONDS,
