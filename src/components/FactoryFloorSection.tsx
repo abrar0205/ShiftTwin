@@ -150,7 +150,7 @@ export function FactoryFloorSection({result,reducedMotion}:{result:SimResult;red
         <span>{mode==='run'?'CONSTRAINT PROPAGATING':'RECOVERY IN PROGRESS'}</span>
         <strong>{mode==='run'?`JPH ${previousTrial.lineRateJPH.toFixed(0)} → ${trial.lineRateJPH.toFixed(0)}`:`JPH ${trial.lineRateJPH.toFixed(0)} → ${healTrial?.lineRateJPH.toFixed(0)??'—'}`}</strong>
         <button onClick={skipSequence}><Icon name="skip" size={13}/> Skip · Esc</button>
-      </motion.div>}</AnimatePresence>}
+      </motion.div>}</AnimatePresence>
 
       {webgl===false?fallback:webgl===null?<div className="factory-loading"><span>INITIALIZING DIGITAL TWIN</span><i/></div>:<SceneBoundary fallback={fallback}><Suspense fallback={<div className="factory-loading"><span>LOADING FACTORY</span><i/></div>}><FactoryExperience trial={hudTrial} mode={mode} reducedMotion={reducedMotion} shift={shift}/></Suspense></SceneBoundary>}
 
