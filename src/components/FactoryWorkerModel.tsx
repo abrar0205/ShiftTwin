@@ -1,4 +1,4 @@
-import { useAnimations, useGLTF } from '@react-three/drei'
+import { Html, useAnimations, useGLTF } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, type MutableRefObject } from 'react'
 import * as THREE from 'three'
@@ -129,19 +129,24 @@ export function StationWorkerModel({
 
 export function HealWorkerModel({
   groupRef,
+  week,
 }:{
   groupRef:MutableRefObject<THREE.Group|null>
+  week:number | null
 }){
   const {root,clips}=useFactoryWorker(false,true)
   useClipDirector(clips,groupRef,()=> 'Walking_A')
 
-  return <group ref={groupRef} scale={.44}>
+  return <group ref={groupRef} scale={.44} visible={false}>
     <primitive object={root}/>
     <SafetyHelmet accent/>
     <mesh position={[0,.08,0]} rotation={[-Math.PI/2,0,0]}>
       <ringGeometry args={[.36,.46,28]}/>
       <meshBasicMaterial color="#5cc8ff" transparent opacity={.65} depthWrite={false} toneMapped={false}/>
     </mesh>
+    {week != null && <Html position={[0,2.75,0]} center distanceFactor={7} occlude={false}>
+      <div className="heal-week-chip">WEEK {week}</div>
+    </Html>}
   </group>
 }
 
