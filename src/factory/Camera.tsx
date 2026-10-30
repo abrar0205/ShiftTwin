@@ -54,6 +54,7 @@ export function FactoryCamera({focusIndex,mode,reducedMotion}:{focusIndex:number
   useEffect(()=>{
     timers.current.forEach(clearTimeout); timers.current=[]
     controls.current && (controls.current.enabled=mode==='idle')
+    if(requestedShot()){ controls.current && (controls.current.enabled=false); return }
     if(mode==='idle'){ go('establishing',true); return }
     const sequence=mode==='run'?RUN_SEQUENCE:HEAL_SEQUENCE
     let elapsed=0
