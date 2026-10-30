@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Environment, Html, Instance, Instances, Lightformer, OrbitControls } from '@react-three/drei'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
+import { ContactShadows, Html, Instance, Instances, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
@@ -23,6 +23,64 @@ const lighting = {
   Late: { background: '#1b1511', ambient: '#d4b493', key: '#ffcf9e', fill: '#d68a5b', intensity: 2.6 },
   Night: { background: '#06090d', ambient: '#52677a', key: '#91b8d9', fill: '#446b8a', intensity: 1.6 },
 } as const
+
+function boostedColor(hex: string, intensity: number) {
+  return new THREE.Color(hex).multiplyScalar(intensity)
+}
+
+function LocalLightformer({
+  intensity,
+  color = '#ffffff',
+  position,
+  rotation,
+  scale,
+}: {
+  intensity: number
+  color?: string
+  position: [number, number, number]
+  rotation: [number, number, number]
+  scale: [number, number, number]
+}) {
+  return <mesh position={position} rotation={rotation} scale={scale}>
+    <planeGeometry args={[1,1]}/>
+    <meshBasicMaterial color={boostedColor(color,intensity)} side={THREE.DoubleSide} toneMapped={false}/>
+  </mesh>
+}
+
+function LocalEnvironment() {
+  const gl = useThree(state => state.gl)
+  const mainScene = useThree(state => state.scene)
+  const [environmentScene] = useState(() => {
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#10151a')
+    return scene
+  })
+  const [renderTarget] = useState(() => new THREE.WebGLCubeRenderTarget(256, {
+    type: THREE.HalfFloatType,
+    generateMipmaps: true,
+    minFilter: THREE.LinearMipmapLinearFilter,
+  }))
+  const [cubeCamera] = useState(() => new THREE.CubeCamera(.1,100,renderTarget))
+
+  useLayoutEffect(() => {
+    cubeCamera.update(gl,environmentScene)
+    const previous = mainScene.environment
+    mainScene.environment = renderTarget.texture
+    return () => {
+      if (mainScene.environment === renderTarget.texture) mainScene.environment = previous
+      renderTarget.dispose()
+    }
+  }, [cubeCamera,environmentScene,gl,mainScene,renderTarget])
+
+  return createPortal(
+    <>
+      <LocalLightformer intensity={2.2} position={[0,9,0]} rotation={[Math.PI/2,0,0]} scale={[40,6,1]}/>
+      <LocalLightformer intensity={0.8} position={[-20,4,0]} rotation={[0,Math.PI/2,0]} scale={[20,4,1]} color="#9cc9ff"/>
+      <LocalLightformer intensity={0.6} position={[20,4,0]} rotation={[0,-Math.PI/2,0]} scale={[20,4,1]} color="#ffd2a1"/>
+    </>,
+    environmentScene,
+  )
+}
 
 function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: boolean }) {
   const ambient = useRef<THREE.AmbientLight>(null)
@@ -291,11 +349,7 @@ function FactoryWorld({ result, trial, shift, seed, reducedMotion }: { result: S
 
   return <>
     <ShiftLighting shift={shift} reducedMotion={reducedMotion}/>
-    <Environment resolution={256} frames={1}>
-      <Lightformer intensity={2.2} position={[0,9,0]} rotation-x={Math.PI/2} scale={[40,6,1]}/>
-      <Lightformer intensity={0.8} position={[-20,4,0]} rotation-y={Math.PI/2} scale={[20,4,1]} color="#9cc9ff"/>
-      <Lightformer intensity={0.6} position={[20,4,0]} rotation-y={-Math.PI/2} scale={[20,4,1]} color="#ffd2a1"/>
-    </Environment>
+    <LocalEnvironment/>
 
     <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
       <planeGeometry args={[45,18]}/>
