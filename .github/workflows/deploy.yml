@@ -28,6 +28,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm test
       - run: npm run build
+      - run: npm run check:assets
       - run: npm run check:runtime-assets
       - uses: actions/configure-pages@v5
         if: github.ref == 'refs/heads/main'

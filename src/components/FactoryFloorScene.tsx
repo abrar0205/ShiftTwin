@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
 import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
-import { Bloom, EffectComposer } from '@react-three/postprocessing'
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { ContactShadows, Html, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
+import { HealWorkerModel, StationWorkerModel } from './FactoryWorkerModel'
+
+const FactoryPostEffects=lazy(()=>import('./FactoryPostEffects'))
 import {
   advanceLineMotion,
   CAR_MOVE_SECONDS,
@@ -27,6 +28,8 @@ const STATUS = {
 const PAINTS = ['#4f555b','#d9d9d3','#1d3850','#a7adb1']
 const BODY_IN_WHITE = '#c3c8cb'
 const MOBILE_QUERY = '(max-width: 820px)'
+const CAR_URL = `${import.meta.env.BASE_URL}models/sedan.glb`
+const ROBOT_URL = `${import.meta.env.BASE_URL}models/robot-arm-a.glb`
 
 type Tone = keyof typeof STATUS
 type MotionRef = MutableRefObject<LineMotionState>
@@ -304,21 +307,98 @@ function ShiftLighting({
   </>
 }
 
-function AreaZone({ x, label, night }: { x: number; label: string; night: boolean }) {
+function FactoryHall({mobile,night}:{mobile:boolean;night:boolean}){
+  const columns=useMemo(()=>[-18,-12,-6,0,6,12,18],[])
+  const windows=useMemo(()=>[-18,-13.5,-9,-4.5,0,4.5,9,13.5,18],[])
+
+  return <group>
+    <mesh rotation={[-Math.PI/2,0,0]} position={[0,.002,0]} receiveShadow>
+      <planeGeometry args={[46,18]}/>
+      {mobile ? <meshStandardMaterial color="#101419" roughness={.66} metalness={.16}/> :
+        <MeshReflectorMaterial
+          color="#11161b"
+          roughness={.54}
+          metalness={.18}
+          mirror={.16}
+          mixBlur={1.2}
+          mixStrength={8}
+          blur={[260,90]}
+          resolution={512}
+          depthScale={.65}
+          minDepthThreshold={.55}
+          maxDepthThreshold={1.4}
+        />}
+    </mesh>
+
+    <mesh position={[0,3.8,-8.15]} receiveShadow>
+      <boxGeometry args={[46,7.6,.34]}/>
+      <meshStandardMaterial color={night?'#0b1016':'#171d22'} roughness={.76} metalness={.16}/>
+    </mesh>
+
+    <mesh position={[-22.65,3.6,-.5]} receiveShadow>
+      <boxGeometry args={[.3,7.2,15.5]}/>
+      <meshStandardMaterial color="#12181d" roughness={.74} metalness={.18}/>
+    </mesh>
+
+    {windows.map(x=><mesh key={`window-${x}`} position={[x,5.12,-7.95]}>
+      <boxGeometry args={[3.6,1.15,.05]}/>
+      <meshStandardMaterial
+        color={night?'#24445d':'#718b99'}
+        emissive={night?'#173c59':'#44545c'}
+        emissiveIntensity={night?.82:.18}
+        roughness={.19}
+        metalness={.12}
+      />
+    </mesh>)}
+
+    <mesh position={[0,3.05,-7.48]} receiveShadow>
+      <boxGeometry args={[45,.14,1.25]}/>
+      <meshStandardMaterial color="#20272d" roughness={.58} metalness={.46}/>
+    </mesh>
+    <mesh position={[0,3.72,-6.95]}>
+      <boxGeometry args={[45,.06,.06]}/>
+      <meshStandardMaterial color="#65717a" roughness={.46} metalness={.62}/>
+    </mesh>
+
+    {columns.map(x=><group key={`column-${x}`}>
+      <mesh position={[x,3.45,-6.75]} castShadow receiveShadow>
+        <boxGeometry args={[.24,6.9,.24]}/>
+        <meshStandardMaterial color="#4c555d" roughness={.48} metalness={.58}/>
+      </mesh>
+      <mesh position={[x,6.9,0]} castShadow>
+        <boxGeometry args={[.18,.18,13.7]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+      <mesh position={[x,6.92,-6.55]} rotation={[0,0,.77]} castShadow>
+        <boxGeometry args={[4.8,.11,.11]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+      <mesh position={[x,6.92,6.55]} rotation={[0,0,-.77]} castShadow>
+        <boxGeometry args={[4.8,.11,.11]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+    </group>)}
+
+    {[-5.6,5.6].map(z=><group key={z}>
+      {[-20,-10,0,10,20].map(x=><mesh key={x} position={[x,.055,z]}>
+        <boxGeometry args={[7.2,.018,.05]}/>
+        <meshBasicMaterial color="#aa882d" transparent opacity={.48}/>
+      </mesh>)}
+    </group>)}
+  </group>
+}
+
+function AreaZone({ x, label }: { x: number; label: string }) {
   return <group position={[x,0,0]}>
-    <mesh position={[0,.015,0]} receiveShadow>
-      <boxGeometry args={[10.7,.03,8.2]}/>
-      <meshStandardMaterial color={night ? '#0c1117' : '#151b20'} roughness={.82} metalness={.08}/>
+    <mesh position={[0,.045,-3.75]}>
+      <boxGeometry args={[10.1,.025,.06]}/>
+      <meshBasicMaterial color="#d3a72f" transparent opacity={.62}/>
     </mesh>
-    <mesh position={[0,.04,-3.75]}>
-      <boxGeometry args={[10.1,.03,.06]}/>
-      <meshBasicMaterial color="#d3a72f"/>
+    <mesh position={[0,.045,3.75]}>
+      <boxGeometry args={[10.1,.025,.06]}/>
+      <meshBasicMaterial color="#d3a72f" transparent opacity={.62}/>
     </mesh>
-    <mesh position={[0,.04,3.75]}>
-      <boxGeometry args={[10.1,.03,.06]}/>
-      <meshBasicMaterial color="#d3a72f"/>
-    </mesh>
-    <Html position={[-4.65,.06,-3.3]} transform distanceFactor={13} occlude={false}>
+    <Html position={[-4.65,.07,-3.3]} transform distanceFactor={13} occlude={false}>
       <div className="factory-area-label">{label}</div>
     </Html>
   </group>
@@ -702,7 +782,8 @@ function TrialWorkers({
   const ghostHelmets = useRef<Array<THREE.MeshStandardMaterial | null>>([])
 
   const layout = useMemo(() => {
-    const workers: WorkerVisual[] = []
+    const detailed: WorkerVisual[] = []
+    const support: WorkerVisual[] = []
     const empty: Array<{position:[number,number,number];stationIndex:number;face:number}> = []
 
     stations.forEach((station,index) => {
@@ -720,14 +801,16 @@ function TrialWorkers({
       let cursor=0
       for(let i=0;i<state.assigned;i++,cursor++){
         const spot=spots[cursor]
-        workers.push({position:spot.position,stationIndex:index,lapsed:false,face:spot.face})
+        const visual={position:spot.position,stationIndex:index,lapsed:false,face:spot.face}
+        if(i===0) detailed.push(visual)
+        else support.push(visual)
       }
 
       const lapsedCount=Math.min(state.deficit,state.lapsedPresentWorkerSlots.length)
       for(let i=0;i<lapsedCount;i++,cursor++){
         const spot=spots[cursor]
         const away=spot.position[2]>0?.28:-.28
-        workers.push({
+        support.push({
           position:[spot.position[0],spot.position[1],spot.position[2]+away],
           stationIndex:index,
           lapsed:true,
@@ -744,17 +827,17 @@ function TrialWorkers({
       }
     })
 
-    return {workers,empty}
+    return {detailed,support,empty}
   },[stations,positions,trial])
 
   useFrame(() => {
     const motion=motionRef.current
     const seq=sequenceRef.current
 
-    for(let i=0;i<layout.workers.length;i++){
+    for(let i=0;i<layout.support.length;i++){
       const group=refs.current[i]
       if(!group) continue
-      const worker=layout.workers[i]
+      const worker=layout.support[i]
       const car=carAtStation(motion,worker.stationIndex)
       const working=Boolean(car && !car.moving && !worker.lapsed)
       const breath=1 + Math.sin(motion.time*1.8+i*.7)*.012
@@ -783,23 +866,32 @@ function TrialWorkers({
   })
 
   return <>
-    {layout.workers.map((worker,i)=>
+    {layout.detailed.map((worker,i)=><StationWorkerModel
+      key={`detailed-worker-${worker.stationIndex}-${i}`}
+      position={worker.position}
+      rotationY={worker.face}
+      stationIndex={worker.stationIndex}
+      motionRef={motionRef}
+      lapsed={worker.lapsed}
+    />)}
+
+    {layout.support.map((worker,i)=>
       <group
-        key={`worker-${i}`}
+        key={`support-worker-${i}`}
         ref={group=>{refs.current[i]=group}}
         position={worker.position}
         rotation={[0,worker.face,0]}
       >
         <mesh castShadow>
-          <capsuleGeometry args={[.13,.42,4,8]}/>
-          <meshStandardMaterial color={worker.lapsed?'#565e66':'#9ba7b3'} roughness={worker.lapsed ? .72 : .58} metalness={.06}/>
+          <capsuleGeometry args={[.12,.38,4,8]}/>
+          <meshStandardMaterial color={worker.lapsed?'#535b62':'#8d9aa5'} roughness={worker.lapsed ? .74 : .58} metalness={.08}/>
         </mesh>
-        <mesh position={[0,.38,0]} scale={[1,.52,1]} castShadow>
-          <sphereGeometry args={[.16,8,6]}/>
-          <meshStandardMaterial color={worker.lapsed?'#6d747a':'#d5a936'} roughness={.55}/>
+        <mesh position={[0,.34,0]} scale={[1,.52,1]} castShadow>
+          <sphereGeometry args={[.145,8,6]}/>
+          <meshStandardMaterial color={worker.lapsed?'#70767b':'#d5a936'} roughness={.55}/>
         </mesh>
-        {worker.lapsed && <mesh position={[.14,.10,.13]}>
-          <circleGeometry args={[.055,12]}/>
+        {worker.lapsed && <mesh position={[.13,.08,.12]}>
+          <circleGeometry args={[.05,12]}/>
           <meshStandardMaterial color="#f5b841" emissive="#f5b841" emissiveIntensity={1.2} toneMapped={false}/>
         </mesh>}
       </group>
@@ -809,7 +901,7 @@ function TrialWorkers({
       <EmptySpot position={spot.position} motionRef={motionRef}/>
       <group position={spot.position} rotation={[0,spot.face,0]}>
         <mesh castShadow>
-          <capsuleGeometry args={[.13,.42,4,8]}/>
+          <capsuleGeometry args={[.12,.38,4,8]}/>
           <meshStandardMaterial
             ref={material=>{ghostBodies.current[i]=material}}
             color="#8c98a3"
@@ -818,8 +910,8 @@ function TrialWorkers({
             roughness={.62}
           />
         </mesh>
-        <mesh position={[0,.38,0]} scale={[1,.52,1]}>
-          <sphereGeometry args={[.16,8,6]}/>
+        <mesh position={[0,.34,0]} scale={[1,.52,1]}>
+          <sphereGeometry args={[.145,8,6]}/>
           <meshStandardMaterial
             ref={material=>{ghostHelmets.current[i]=material}}
             color="#d5a936"
@@ -847,17 +939,15 @@ function HealWorker({
   week:number | null
 }) {
   const group=useRef<THREE.Group>(null)
-  const accent=useRef<THREE.MeshStandardMaterial>(null)
-  const body=useRef<THREE.MeshStandardMaterial>(null)
-  const start=useMemo(()=>new THREE.Vector3(x+4.4,.88,4.3),[x])
-  const control=useMemo(()=>new THREE.Vector3(x+2.2,.9,3.5),[x])
-  const end=useMemo(()=>new THREE.Vector3(x,.88,targetZ),[x,targetZ])
+  const start=useMemo(()=>new THREE.Vector3(x+4.4,.075,4.3),[x])
+  const control=useMemo(()=>new THREE.Vector3(x+2.2,.075,3.5),[x])
+  const end=useMemo(()=>new THREE.Vector3(x,.075,targetZ),[x,targetZ])
   const curve=useMemo(()=>new THREE.QuadraticBezierCurve3(start,control,end),[start,control,end])
   const point=useMemo(()=>new THREE.Vector3(),[])
   const tangent=useMemo(()=>new THREE.Vector3(),[])
 
   useFrame(()=>{
-    if(!group.current||!accent.current||!body.current) return
+    if(!group.current) return
     const seq=sequenceRef.current
     const active=enabled && seq.kind==='heal'
     group.current.visible=active
@@ -868,38 +958,9 @@ function HealWorker({
     curve.getTangent(p,tangent)
     group.current.position.copy(point)
     group.current.rotation.y=-Math.atan2(tangent.z,tangent.x)+Math.PI/2
-    const fade=Math.min(1,p/.14)
-    body.current.opacity=fade
-    accent.current.opacity=.28*fade
-    accent.current.emissiveIntensity=1.1+(Math.sin(seq.progress*18)+1)*.35
   })
 
-  return <group ref={group} visible={false}>
-    <mesh scale={1.13}>
-      <capsuleGeometry args={[.15,.45,4,8]}/>
-      <meshStandardMaterial
-        ref={accent}
-        color="#5cc8ff"
-        emissive="#5cc8ff"
-        emissiveIntensity={1.4}
-        transparent
-        opacity={.28}
-        wireframe
-        toneMapped={false}
-      />
-    </mesh>
-    <mesh>
-      <capsuleGeometry args={[.13,.42,4,8]}/>
-      <meshStandardMaterial ref={body} color="#a6b2bd" transparent opacity={1} roughness={.55}/>
-    </mesh>
-    <mesh position={[0,.38,0]} scale={[1,.52,1]}>
-      <sphereGeometry args={[.16,8,6]}/>
-      <meshStandardMaterial color="#5cc8ff" emissive="#5cc8ff" emissiveIntensity={.8} toneMapped={false}/>
-    </mesh>
-    {week != null && <Html position={[0,.82,0]} center distanceFactor={10} occlude={false}>
-      <div className="heal-week-chip">WEEK {week}</div>
-    </Html>}
-  </group>
+  return <HealWorkerModel groupRef={group} week={week}/>
 }
 
 function slotX(xs: number[], slot: number) {
@@ -924,6 +985,59 @@ function renderSlotX(xs: number[], state: LineMotionState, slot: number) {
   return THREE.MathUtils.lerp(base,target,Math.min(1,compression))
 }
 
+interface CarVisual {
+  root: THREE.Object3D
+  body: THREE.Mesh | null
+  bodyMaterial: THREE.MeshPhysicalMaterial | null
+  bodyMap: THREE.Texture | null
+  wheels: Array<{object:THREE.Object3D;baseRotation:THREE.Euler}>
+}
+
+function createCarVisual(source:THREE.Object3D):CarVisual{
+  const root=source.clone(true)
+  const wheels:Array<{object:THREE.Object3D;baseRotation:THREE.Euler}>=[]
+  let body:THREE.Mesh|null=null
+  let bodyMaterial:THREE.MeshPhysicalMaterial|null=null
+  let bodyMap:THREE.Texture|null=null
+
+  root.traverse(object=>{
+    const mesh=object as THREE.Mesh
+    if(!mesh.isMesh) return
+    mesh.castShadow=true
+    mesh.receiveShadow=true
+
+    if(mesh.name==='body'){
+      body=mesh
+      const sourceMaterial=Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+      if(sourceMaterial instanceof THREE.MeshStandardMaterial) bodyMap=sourceMaterial.map
+      bodyMaterial=new THREE.MeshPhysicalMaterial({
+        color:BODY_IN_WHITE,
+        map:null,
+        metalness:.42,
+        roughness:.31,
+        clearcoat:.08,
+        clearcoatRoughness:.22,
+      })
+      mesh.material=bodyMaterial
+    }else if(mesh.name.startsWith('wheel-')){
+      const sourceMaterial=Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+      const map=sourceMaterial instanceof THREE.MeshStandardMaterial ? sourceMaterial.map : null
+      mesh.material=new THREE.MeshStandardMaterial({
+        color:'#202428',
+        map,
+        metalness:.22,
+        roughness:.68,
+      })
+      wheels.push({object:mesh,baseRotation:mesh.rotation.clone()})
+    }
+  })
+
+  root.rotation.y=Math.PI/2
+  root.scale.setScalar(.72)
+  root.visible=false
+  return {root,body,bodyMaterial,bodyMap,wheels}
+}
+
 function CarFleet({
   xs,
   motionRef,
@@ -931,152 +1045,82 @@ function CarFleet({
   xs: number[]
   motionRef: MotionRef
 }) {
+  const source=useGLTF(CAR_URL)
   const maxCars=12
-  const bodyRef=useRef<THREE.InstancedMesh>(null)
-  const cabinRef=useRef<THREE.InstancedMesh>(null)
-  const glassRef=useRef<THREE.InstancedMesh>(null)
-  const wheelRef=useRef<THREE.InstancedMesh>(null)
-  const lightRef=useRef<THREE.InstancedMesh>(null)
-  const bodyGeo=useMemo(()=>new RoundedBoxGeometry(1.72,.38,.88,3,.11),[])
-  const cabinGeo=useMemo(()=>new RoundedBoxGeometry(.92,.34,.74,3,.08),[])
-  const glassGeo=useMemo(()=>new RoundedBoxGeometry(.72,.22,.755,2,.055),[])
-  const wheelGeo=useMemo(()=>new THREE.CylinderGeometry(.19,.19,.12,12),[])
-  const lightGeo=useMemo(()=>new RoundedBoxGeometry(.06,.09,.56,2,.025),[])
-  const temp=useMemo(()=>new THREE.Object3D(),[])
-  const color=useMemo(()=>new THREE.Color(),[])
+  const visuals=useMemo(
+    ()=>Array.from({length:maxCars},()=>createCarVisual(source.scene)),
+    [source.scene],
+  )
 
-  useEffect(()=>()=>{bodyGeo.dispose();cabinGeo.dispose();glassGeo.dispose();wheelGeo.dispose();lightGeo.dispose()},[bodyGeo,cabinGeo,glassGeo,wheelGeo,lightGeo])
-
-  const hide=(mesh:THREE.InstancedMesh,index:number)=>{
-    temp.position.set(0,-50,0)
-    temp.rotation.set(0,0,0)
-    temp.scale.set(0,0,0)
-    temp.updateMatrix()
-    mesh.setMatrixAt(index,temp.matrix)
-  }
+  useEffect(()=>()=>{
+    for(const visual of visuals){
+      visual.bodyMaterial?.dispose()
+      for(const wheel of visual.wheels){
+        const mesh=wheel.object as THREE.Mesh
+        const materials=Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        materials.forEach(material=>material.dispose())
+      }
+    }
+  },[visuals])
 
   useFrame(()=>{
     const state=motionRef.current
-    const cars=[...state.cars.values()].sort((a,b)=>a.id-b.id).slice(0,maxCars)
+    let visualIndex=0
 
-    for(let i=0;i<maxCars;i++){
-      const body=bodyRef.current
-      const cabin=cabinRef.current
-      const glass=glassRef.current
-      if(!body||!cabin||!glass) continue
-      const car=cars[i]
-      if(!car){
-        hide(body,i);hide(cabin,i);hide(glass,i)
-        continue
-      }
-
+    for(const car of state.cars.values()){
+      if(visualIndex>=maxCars) break
+      const visual=visuals[visualIndex++]
       const p=easeInOutCubic(carMoveProgress(car,state.time))
       const fromX=renderSlotX(xs,state,car.fromSlot)
       const toX=renderSlotX(xs,state,car.slot)
       const x=THREE.MathUtils.lerp(fromX,toX,p)
       const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-      const bodyColor=stage<2?BODY_IN_WHITE:PAINTS[car.id%PAINTS.length]
-      const bounce=car.moving?Math.sin(p*Math.PI)*.025:0
+      const bounce=car.moving?Math.sin(p*Math.PI)*.022:0
 
-      temp.position.set(x,1.02+bounce,0)
-      temp.rotation.set(0,0,0)
-      temp.scale.set(1,1,1)
-      temp.updateMatrix()
-      body.setMatrixAt(i,temp.matrix)
-      body.setColorAt(i,color.set(bodyColor))
+      visual.root.visible=true
+      visual.root.position.set(x,.575+bounce,0)
 
-      temp.position.set(x-.08,1.33+bounce,0)
-      temp.scale.set(1,1,1)
-      temp.updateMatrix()
-      cabin.setMatrixAt(i,temp.matrix)
-      cabin.setColorAt(i,color.set(bodyColor))
-
-      if(stage>=4){
-        temp.position.set(x-.08,1.35+bounce,0)
-        temp.scale.set(1,1,1)
-        temp.updateMatrix()
-        glass.setMatrixAt(i,temp.matrix)
-      }else hide(glass,i)
-    }
-
-    if(bodyRef.current){
-      bodyRef.current.instanceMatrix.needsUpdate=true
-      if(bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate=true
-    }
-    if(cabinRef.current){
-      cabinRef.current.instanceMatrix.needsUpdate=true
-      if(cabinRef.current.instanceColor) cabinRef.current.instanceColor.needsUpdate=true
-    }
-    if(glassRef.current) glassRef.current.instanceMatrix.needsUpdate=true
-
-    const wheels=wheelRef.current
-    if(wheels){
-      let wi=0
-      for(const car of cars){
-        const p=easeInOutCubic(carMoveProgress(car,state.time))
-        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
-        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-        const spin=car.moving ? -(state.time-car.moveStart)*5.5 : 0
-        for(const dx of [-.55,.55]){
-          for(const dz of [-.48,.48]){
-            if(stage>=7){
-              temp.position.set(x+dx,1.0,dz)
-              temp.rotation.set(Math.PI/2,0,spin)
-              temp.scale.set(1,1,1)
-              temp.updateMatrix()
-              wheels.setMatrixAt(wi,temp.matrix)
-            }else hide(wheels,wi)
-            wi++
+      if(visual.bodyMaterial){
+        if(stage<2){
+          if(visual.bodyMaterial.map){
+            visual.bodyMaterial.map=null
+            visual.bodyMaterial.needsUpdate=true
           }
+          visual.bodyMaterial.color.set(BODY_IN_WHITE)
+          visual.bodyMaterial.metalness=.18
+          visual.bodyMaterial.roughness=.40
+          visual.bodyMaterial.clearcoat=.04
+        }else{
+          if(visual.bodyMaterial.map!==visual.bodyMap){
+            visual.bodyMaterial.map=visual.bodyMap
+            visual.bodyMaterial.needsUpdate=true
+          }
+          visual.bodyMaterial.color.set(PAINTS[car.id%PAINTS.length])
+          visual.bodyMaterial.metalness=.42
+          visual.bodyMaterial.roughness=stage>=4?.24:.32
+          visual.bodyMaterial.clearcoat=stage>=4?1:.22
+          visual.bodyMaterial.clearcoatRoughness=stage>=4?.12:.24
         }
       }
-      while(wi<maxCars*4) hide(wheels,wi++)
-      wheels.instanceMatrix.needsUpdate=true
+
+      const spin=car.moving ? -(state.time-car.moveStart)*5.5 : 0
+      for(const wheel of visual.wheels){
+        wheel.object.visible=stage>=7
+        wheel.object.rotation.set(
+          wheel.baseRotation.x+spin,
+          wheel.baseRotation.y,
+          wheel.baseRotation.z,
+        )
+      }
     }
 
-    const lights=lightRef.current
-    if(lights){
-      let li=0
-      for(const car of cars){
-        const p=easeInOutCubic(carMoveProgress(car,state.time))
-        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
-        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-        for(const end of [-1,1]){
-          if(stage>=8){
-            temp.position.set(x+end*.86,1.05,0)
-            temp.rotation.set(0,0,0)
-            temp.scale.set(1,1,1)
-            temp.updateMatrix()
-            lights.setMatrixAt(li,temp.matrix)
-            lights.setColorAt(li,color.set(end>0?'#dff4ff':'#ff5d5d'))
-          }else hide(lights,li)
-          li++
-        }
-      }
-      while(li<maxCars*2) hide(lights,li++)
-      lights.instanceMatrix.needsUpdate=true
-      if(lights.instanceColor) lights.instanceColor.needsUpdate=true
-    }
+    while(visualIndex<maxCars) visuals[visualIndex++].root.visible=false
   })
 
-  return <>
-    <instancedMesh ref={bodyRef} args={[bodyGeo,undefined,maxCars]} castShadow receiveShadow>
-      <meshStandardMaterial roughness={.32} metalness={.68}/>
-    </instancedMesh>
-    <instancedMesh ref={cabinRef} args={[cabinGeo,undefined,maxCars]} castShadow>
-      <meshStandardMaterial roughness={.34} metalness={.62}/>
-    </instancedMesh>
-    <instancedMesh ref={glassRef} args={[glassGeo,undefined,maxCars]} castShadow>
-      <meshPhysicalMaterial color="#172531" roughness={.16} metalness={.06} transmission={.05}/>
-    </instancedMesh>
-    <instancedMesh ref={wheelRef} args={[wheelGeo,undefined,maxCars*4]} castShadow>
-      <meshStandardMaterial color="#17191c" roughness={.72} metalness={.18}/>
-    </instancedMesh>
-    <instancedMesh ref={lightRef} args={[lightGeo,undefined,maxCars*2]}>
-      <meshBasicMaterial toneMapped={false}/>
-    </instancedMesh>
-  </>
+  return <>{visuals.map((visual,index)=><primitive key={index} object={visual.root}/>)}</>
 }
+
+useGLTF.preload(CAR_URL)
 
 function WeldSparks({
   motionRef,
@@ -1144,71 +1188,95 @@ function RobotArm({
   sparksDisabled?:boolean
   phaseOffset?:number
 }) {
-  const shoulder=useRef<THREE.Group>(null)
-  const elbow=useRef<THREE.Group>(null)
-  const wrist=useRef<THREE.Group>(null)
+  const source=useGLTF(ROBOT_URL)
+  const root=useMemo(()=>{
+    const clone=source.scene.clone(true)
+    clone.traverse(object=>{
+      const mesh=object as THREE.Mesh
+      if(!mesh.isMesh) return
+      mesh.castShadow=true
+      mesh.receiveShadow=true
+      const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material]
+      const next=materials.map(material=>{
+        const cloned=material.clone()
+        if(cloned instanceof THREE.MeshStandardMaterial){
+          cloned.roughness=.42
+          cloned.metalness=.28
+        }
+        return cloned
+      })
+      mesh.material=Array.isArray(mesh.material)?next:next[0]
+    })
+    return clone
+  },[source.scene])
+
+  const joints=useMemo(()=>({
+    base:root.getObjectByName('element-a'),
+    shoulder:root.getObjectByName('element-b'),
+    elbow:root.getObjectByName('element-c'),
+    wrist:root.getObjectByName('element-e'),
+    tool:root.getObjectByName('element-f'),
+  }),[root])
+  const baseRotations=useMemo(()=>({
+    base:joints.base?.rotation.clone(),
+    shoulder:joints.shoulder?.rotation.clone(),
+    elbow:joints.elbow?.rotation.clone(),
+    wrist:joints.wrist?.rotation.clone(),
+    tool:joints.tool?.rotation.clone(),
+  }),[joints])
+  const outer=useRef<THREE.Group>(null)
+  const sparkAnchor=useRef<THREE.Group>(null)
+  const toolPosition=useMemo(()=>new THREE.Vector3(),[])
 
   useFrame(()=>{
     const state=motionRef.current
     const car=carAtStation(state,stationIndex)
     const staffed=trial.stations[stationIndex]?.deficit===0
-    const active=staffed && Boolean(car && !car.moving)
+    const active=staffed&&Boolean(car&&!car.moving)
     const sign=mirror?-1:1
 
-    if(!shoulder.current||!elbow.current||!wrist.current) return
-    if(!active){
-      shoulder.current.rotation.z=THREE.MathUtils.lerp(shoulder.current.rotation.z,sign*.18,.08)
-      elbow.current.rotation.z=THREE.MathUtils.lerp(elbow.current.rotation.z,-sign*.38,.08)
-      wrist.current.rotation.z=THREE.MathUtils.lerp(wrist.current.rotation.z,sign*.16,.08)
-      return
+    const dwell=car?Math.max(.1,(car.readyAt-car.arrivedAt)):.1
+    const phase=active&&car
+      ? Number.isFinite(dwell)
+        ? Math.max(0,Math.min(1,(state.time-car.arrivedAt)/dwell))
+        : 0
+      : 0
+    const reach=active?Math.sin(Math.min(1,phase*2)*Math.PI/2):0
+    const weld=active?Math.sin((phase*5+phaseOffset)*Math.PI*2):0
+
+    if(joints.base&&baseRotations.base){
+      joints.base.rotation.y=baseRotations.base.y+sign*(active?.18*Math.sin(phase*Math.PI*2):.04)
+    }
+    if(joints.shoulder&&baseRotations.shoulder){
+      joints.shoulder.rotation.z=baseRotations.shoulder.z+sign*(.16-.42*reach+.055*weld)
+    }
+    if(joints.elbow&&baseRotations.elbow){
+      joints.elbow.rotation.z=baseRotations.elbow.z-sign*(.28+.48*reach-.06*weld)
+    }
+    if(joints.wrist&&baseRotations.wrist){
+      joints.wrist.rotation.z=baseRotations.wrist.z+sign*(.12+.20*reach+.10*weld)
+    }
+    if(joints.tool&&baseRotations.tool){
+      joints.tool.rotation.y=baseRotations.tool.y+(active?state.time*1.8:0)
     }
 
-    const dwell=Math.max(.1,(car!.readyAt-car!.arrivedAt))
-    const phase=Number.isFinite(dwell)
-      ? Math.max(0,Math.min(1,(state.time-car!.arrivedAt)/dwell))
-      : 0
-    const weld=Math.sin((phase*5+phaseOffset)*Math.PI*2)
-    const reach=Math.sin(Math.min(1,phase*2)*Math.PI/2)
-
-    shoulder.current.rotation.z=sign*(.18-.48*reach+.07*weld)
-    elbow.current.rotation.z=-sign*(.38+.55*reach-.08*weld)
-    wrist.current.rotation.z=sign*(.16+.24*reach+.12*Math.sin((phase*6+phaseOffset)*Math.PI*2))
+    if(sparkAnchor.current&&outer.current&&joints.tool){
+      joints.tool.updateWorldMatrix(true,false)
+      joints.tool.getWorldPosition(toolPosition)
+      outer.current.worldToLocal(toolPosition)
+      sparkAnchor.current.position.copy(toolPosition)
+    }
   })
 
-  return <group position={position} rotation={[0,mirror?Math.PI:0,0]}>
-    <mesh position={[0,.14,0]} castShadow>
-      <cylinderGeometry args={[.26,.31,.28,12]}/>
-      <meshStandardMaterial color="#b8942f" roughness={.48} metalness={.38}/>
-    </mesh>
-    <group ref={shoulder} position={[0,.34,0]}>
-      <mesh position={[0,.45,0]} castShadow>
-        <capsuleGeometry args={[.105,.65,5,8]}/>
-        <meshStandardMaterial color="#d2aa35" roughness={.42} metalness={.34}/>
-      </mesh>
-      <group ref={elbow} position={[0,.88,0]}>
-        <mesh position={[0,.38,0]} castShadow>
-          <capsuleGeometry args={[.09,.52,5,8]}/>
-          <meshStandardMaterial color="#bd982f" roughness={.42} metalness={.34}/>
-        </mesh>
-        <group ref={wrist} position={[0,.72,0]}>
-          <mesh position={[0,.21,0]} castShadow>
-            <capsuleGeometry args={[.065,.28,4,7]}/>
-            <meshStandardMaterial color="#8b949d" roughness={.4} metalness={.52}/>
-          </mesh>
-          <group position={[0,.47,0]}>
-            <mesh>
-              <cylinderGeometry args={[.045,.025,.18,8]}/>
-              <meshStandardMaterial color="#3d444a" roughness={.38} metalness={.62}/>
-            </mesh>
-            <group position={[0,.11,0]}>
-              <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>
-            </group>
-          </group>
-        </group>
-      </group>
+  return <group ref={outer} position={position} rotation={[0,mirror?Math.PI:0,0]} scale={.64}>
+    <primitive object={root}/>
+    <group ref={sparkAnchor}>
+      <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>
     </group>
   </group>
 }
+
+useGLTF.preload(ROBOT_URL)
 
 function TorqueEffect({
   x,
@@ -1518,6 +1586,7 @@ function FactoryWorld({
     [result,shift],
   )
   const mobile=typeof window!=='undefined'&&window.matchMedia(MOBILE_QUERY).matches
+  const [renderQuality,setRenderQuality]=useState(mobile?0:2)
   const bottleneckIndex=useMemo(()=>trial.stations.reduce((best,station,index,all)=>{
     const current=all[best]
     if(station.deficit>current.deficit) return index
@@ -1552,6 +1621,13 @@ function FactoryWorld({
     />
     <ShiftLighting shift={shift} reducedMotion={reducedMotion} focus={hasBottleneck} sequenceRef={sequenceRef}/>
     <LocalEnvironment/>
+    {!mobile&&!reducedMotion&&<PerformanceMonitor
+      factor={1}
+      bounds={()=>[45,60]}
+      flipflops={3}
+      onDecline={()=>setRenderQuality(level=>Math.max(0,level-1))}
+      onFallback={()=>setRenderQuality(0)}
+    />}
     <CameraDirector
       xs={xs}
       bottleneckIndex={bottleneckIndex}
@@ -1561,14 +1637,11 @@ function FactoryWorld({
       reducedMotion={reducedMotion}
     />
 
-    <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
-      <planeGeometry args={[45,18]}/>
-      <meshStandardMaterial color="#0b0f13" roughness={.66} metalness={.14}/>
-    </mesh>
+    <FactoryHall mobile={mobile} night={shift==='Night'}/>
 
-    <AreaZone x={-12} label="BODY SYSTEMS" night={shift==='Night'}/>
-    <AreaZone x={0} label="ASSEMBLY" night={shift==='Night'}/>
-    <AreaZone x={12} label="QUALITY & FLOW" night={shift==='Night'}/>
+    <AreaZone x={-12} label="BODY SYSTEMS"/>
+    <AreaZone x={0} label="ASSEMBLY"/>
+    <AreaZone x={12} label="QUALITY & FLOW"/>
 
     <Conveyor xs={xs} motionRef={motionRef}/>
     <CarFleet xs={xs} motionRef={motionRef}/>
@@ -1620,10 +1693,10 @@ function FactoryWorld({
       />
     })}
 
-    <ContactShadows position={[0,.02,0]} opacity={.38} scale={46} blur={2.6} far={12}/>
-    {!mobile&&!reducedMotion&&<EffectComposer multisampling={0}>
-      <Bloom intensity={.48} luminanceThreshold={1.12} luminanceSmoothing={.18} mipmapBlur/>
-    </EffectComposer>}
+    {(mobile||renderQuality<2)&&<ContactShadows position={[0,.02,0]} opacity={.32} scale={46} blur={2.5} far={12}/>}
+    {!mobile&&!reducedMotion&&<Suspense fallback={null}>
+      <FactoryPostEffects quality={renderQuality}/>
+    </Suspense>}
 
     <OrbitControls
       ref={controlsRef}
@@ -1679,6 +1752,10 @@ export default function FactoryFloorScene({
     frameloop={!active?'never':reducedMotion?'demand':'always'}
     camera={{position:[24,18,24],fov:30,near:.1,far:100}}
     gl={{antialias:true,powerPreference:'high-performance'}}
+    onCreated={({gl})=>{
+      gl.toneMapping=THREE.AgXToneMapping
+      gl.toneMappingExposure=1.05
+    }}
   >
     <FactoryWorld
       result={result}

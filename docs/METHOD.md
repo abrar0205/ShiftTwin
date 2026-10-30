@@ -93,6 +93,23 @@ The v1.3 story sequence does not alter simulation outputs:
 
 The 12 full station cards were replaced by compact status chips with details on hover/focus. STARVED labels are updated in one batched frame loop, and Three.js color/vector temporaries used in frame loops are preallocated.
 
+## Phase 2 visual layer
+
+The Phase 2 renderer upgrades presentation without changing any simulation mathematics:
+
+- every visible vehicle is a self-hosted generic Kenney sedan GLB and remains positioned by the deterministic line-motion state;
+- vehicle build stages are represented by body-in-white material, paint/clearcoat finish and wheel visibility rather than by a scripted camera-only effect;
+- each workcell renders one fully rigged KayKit mannequin with real Idle/Interact clips; additional assigned headcount remains lightweight anonymous geometry to bound draw calls;
+- the plan-heal worker uses the same rig with a Walk clip along the existing intervention path;
+- the body-shop cells use a self-hosted Kenney Factory Kit robot arm with hierarchical joints driven by the existing weld-cycle phase;
+- the factory hall is self-authored procedural geometry with structural columns, roof trusses, glazing and a mezzanine edge;
+- desktop concrete uses a low-strength blurred reflector while mobile uses a standard PBR floor;
+- desktop rendering uses AgX tone mapping plus a separately lazy-loaded N8AO/Bloom/SMAA/Vignette stack;
+- a PerformanceMonitor lowers rendering quality from AO + bloom to bloom-only and then antialiasing/vignette-only when frame rate declines;
+- mobile omits the premium post stack and keeps the cheaper lighting/shadow path.
+
+The current build deliberately retains the local procedural environment map. An incomplete candidate HDR transfer was rejected rather than shipped, and no Blender-baked lightmap is claimed. Model provenance is recorded in `docs/ASSETS.md`.
+
 ## Intervention comparison
 
 Every displayed before/after intervention pair is re-simulated:
