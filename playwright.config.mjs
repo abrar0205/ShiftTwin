@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: '**/*.pw.mjs',
   timeout: 60_000,
   expect: { timeout: 12_000 },
   use: {
