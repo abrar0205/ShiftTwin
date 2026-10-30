@@ -164,3 +164,4 @@ export function FactoryFloorSection({result,reducedMotion}:{result:SimResult;red
     </div>
     <div className="factory-caption"><span><b className="ready"/>covered</span><span><b className="watch"/>short</span><span><b className="risk"/>uncovered</span><p>All displayed headline metrics use {result.samples.toLocaleString()} trials · synthetic data</p></div>
   </section>
+}
