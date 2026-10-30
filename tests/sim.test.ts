@@ -43,7 +43,7 @@ describe('ShiftTwin simulation', () => {
     const b=simulate(plant,{...BASELINE_SCENARIO,absenceRate:9,demandPct:10},240)
     expect(a.readiness).toBe(b.readiness)
     expect(a.worst.stationId).toBe(b.worst.stationId)
-    expect(a.representativeTrials.Night).toEqual(b.representativeTrials.Night)
+    expect(a.trialSets.Night).toEqual(b.trialSets.Night)
   })
 
   it('keeps the reference scenarios in calibrated operating ranges', () => {
@@ -72,7 +72,8 @@ describe('ShiftTwin simulation', () => {
     const plant=generatePlant(20261029)
     const result=simulate(plant,PRESETS.holiday,900)
     for (const shift of ['Early','Late','Night'] as const) {
-      const trial=result.representativeTrials[shift]
+      const set=result.trialSets[shift]
+      const trial=set.typicalTrial
       expect(trial.trialIndex).toBeGreaterThanOrEqual(1)
       expect(trial.trialIndex).toBeLessThanOrEqual(result.samples)
       expect(trial.selection).toBe('median-shortfall')
@@ -80,6 +81,26 @@ describe('ShiftTwin simulation', () => {
       const assigned=trial.stations.flatMap(station=>station.assignedWorkerSlots)
       expect(new Set(assigned).size).toBe(assigned.length)
       expect(trial.stations.every(station=>station.assigned + station.deficit === station.required)).toBe(true)
+      if (set.failureRate > 0) {
+        expect(set.failureTrial).not.toBeNull()
+        expect(set.failureTrial!.shortfall).toBeGreaterThan(0)
+        expect(set.failureTrial!.selection).toBe('median-failing-shortfall')
+      } else {
+        expect(set.failureTrial).toBeNull()
+      }
+    }
+  })
+
+  it('exposes a failing trial whenever a shift has non-zero failure rate', () => {
+    const plant=generatePlant(20261029)
+    const result=simulate(plant,PRESETS.holiday,1200)
+    for (const shift of ['Early','Late','Night'] as const) {
+      const set=result.trialSets[shift]
+      if (set.failureRate > 0) {
+        expect(set.failureTrial).not.toBeNull()
+        expect(set.failureTrial!.shortfall).toBeGreaterThan(0)
+        expect(set.failureTrial!.fullCoverage).toBe(false)
+      }
     }
   })
 
@@ -87,7 +108,7 @@ describe('ShiftTwin simulation', () => {
     const plant=generatePlant(20261029)
     const scenario={...PRESETS.ramp,absenceRate:14}
     const result=simulate(plant,scenario,900)
-    const trial=result.representativeTrials.Night
+    const trial=result.trialSets.Night.failureTrial ?? result.trialSets.Night.typicalTrial
     const bottleneck=Math.min(...trial.stations.map(station=>station.throughputFactor))
     const target=BASE_LINE_RATE_JPH*(1+scenario.demandPct/100)
     expect(trial.targetLineRateJPH).toBeCloseTo(target,8)

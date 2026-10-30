@@ -97,7 +97,7 @@ export interface RepresentativeTrial {
   shift: Shift
   trialIndex: number
   sampleCount: number
-  selection: 'median-shortfall'
+  selection: 'median-shortfall' | 'median-failing-shortfall'
   medianShortfall: number
   shortfall: number
   fullCoverage: boolean
@@ -107,6 +107,13 @@ export interface RepresentativeTrial {
   lineRateJPH: number
   carsLostPerShift: number
   shiftHours: number
+}
+
+export interface RepresentativeTrialSet {
+  shift: Shift
+  failureRate: number
+  typicalTrial: RepresentativeTrial
+  failureTrial: RepresentativeTrial | null
 }
 
 export interface SimResult {
@@ -120,7 +127,7 @@ export interface SimResult {
   worst: StationRisk
   criticalSkillCoverage: number
   attribution: AttributionStep[]
-  representativeTrials: Record<Shift, RepresentativeTrial>
+  trialSets: Record<Shift, RepresentativeTrialSet>
 }
 
 export interface Intervention {

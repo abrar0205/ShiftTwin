@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { ContactShadows, Environment, Html, Instance, Instances, OrbitControls } from '@react-three/drei'
+import { ContactShadows, Environment, Html, Instance, Instances, Lightformer, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
-import type { Shift, SimResult, Station, TrialStationState } from '../sim/types'
+import type { RepresentativeTrial, Shift, SimResult, Station, TrialStationState } from '../sim/types'
 
 const STATUS = {
   ready: { color: '#3ddc97', label: 'staffed' },
@@ -278,10 +278,9 @@ function OverheadLights({ night }: { night: boolean }) {
   </>
 }
 
-function FactoryWorld({ result, shift, seed, reducedMotion }: { result: SimResult; shift: Shift; seed: number; reducedMotion: boolean }) {
+function FactoryWorld({ result, trial, shift, seed, reducedMotion }: { result: SimResult; trial: RepresentativeTrial; shift: Shift; seed: number; reducedMotion: boolean }) {
   const plant = useMemo(() => generatePlant(seed), [seed])
   const xs = useMemo(() => plant.stations.map((_s,i) => -16.5 + i * 3), [plant.stations])
-  const trial = result.representativeTrials[shift]
   const stationStates = useMemo(() => new Map(trial.stations.map(state => [state.stationId,state])), [trial])
   const risks = useMemo(
     () => new Map(result.stationRisks.filter(r => r.shift === shift).map(r => [r.stationId, r])),
@@ -292,7 +291,11 @@ function FactoryWorld({ result, shift, seed, reducedMotion }: { result: SimResul
 
   return <>
     <ShiftLighting shift={shift} reducedMotion={reducedMotion}/>
-    <Environment preset="warehouse" background={false}/>
+    <Environment resolution={256} frames={1}>
+      <Lightformer intensity={2.2} position={[0,9,0]} rotation-x={Math.PI/2} scale={[40,6,1]}/>
+      <Lightformer intensity={0.8} position={[-20,4,0]} rotation-y={Math.PI/2} scale={[20,4,1]} color="#9cc9ff"/>
+      <Lightformer intensity={0.6} position={[20,4,0]} rotation-y={-Math.PI/2} scale={[20,4,1]} color="#ffd2a1"/>
+    </Environment>
 
     <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
       <planeGeometry args={[45,18]}/>
@@ -346,12 +349,14 @@ function FactoryWorld({ result, shift, seed, reducedMotion }: { result: SimResul
 
 export default function FactoryFloorScene({
   result,
+  trial,
   shift,
   seed,
   active,
   reducedMotion,
 }: {
   result: SimResult
+  trial: RepresentativeTrial
   shift: Shift
   seed: number
   active: boolean
@@ -365,6 +370,6 @@ export default function FactoryFloorScene({
     camera={{ position: [24,18,24], fov: 30, near: .1, far: 100 }}
     gl={{ antialias: true, powerPreference: 'high-performance' }}
   >
-    <FactoryWorld result={result} shift={shift} seed={seed} reducedMotion={reducedMotion}/>
+    <FactoryWorld result={result} trial={trial} shift={shift} seed={seed} reducedMotion={reducedMotion}/>
   </Canvas>
 }

@@ -3,6 +3,7 @@ import type {
   AttributionStep,
   Plant,
   RepresentativeTrial,
+  RepresentativeTrialSet,
   Scenario,
   Shift,
   SimResult,
@@ -17,12 +18,16 @@ const ATTRIBUTION_SAMPLES = 700
 export const BASE_LINE_RATE_JPH = 60
 export const SHIFT_HOURS = 8
 
-function emptyRepresentative(shift: Shift, samples: number): RepresentativeTrial {
+function emptyRepresentative(
+  shift: Shift,
+  samples: number,
+  selection: RepresentativeTrial['selection'],
+): RepresentativeTrial {
   return {
     shift,
     trialIndex: 0,
     sampleCount: samples,
-    selection: 'median-shortfall',
+    selection,
     medianShortfall: 0,
     shortfall: 0,
     fullCoverage: false,
@@ -32,6 +37,15 @@ function emptyRepresentative(shift: Shift, samples: number): RepresentativeTrial
     lineRateJPH: 0,
     carsLostPerShift: BASE_LINE_RATE_JPH * SHIFT_HOURS,
     shiftHours: SHIFT_HOURS,
+  }
+}
+
+function emptyTrialSet(shift: Shift, samples: number): RepresentativeTrialSet {
+  return {
+    shift,
+    failureRate: 0,
+    typicalTrial: emptyRepresentative(shift, samples, 'median-shortfall'),
+    failureTrial: null,
   }
 }
 
@@ -52,10 +66,10 @@ function emptyResult(plant: Plant, scenario: Scenario, samples: number): SimResu
     worst: fallback,
     criticalSkillCoverage: 0,
     attribution: [],
-    representativeTrials: {
-      Early: emptyRepresentative('Early', samples),
-      Late: emptyRepresentative('Late', samples),
-      Night: emptyRepresentative('Night', samples),
+    trialSets: {
+      Early: emptyTrialSet('Early', samples),
+      Late: emptyTrialSet('Late', samples),
+      Night: emptyTrialSet('Night', samples),
     },
   }
 }
@@ -65,6 +79,25 @@ function medianShortfall(values: number[]) {
   return sorted[Math.floor(sorted.length / 2)] ?? 0
 }
 
+function closestSample(
+  values: number[],
+  target: number,
+  predicate: (value: number) => boolean = () => true,
+) {
+  let chosen = -1
+  let bestDistance = Infinity
+  for (let sample = 0; sample < values.length; sample++) {
+    const value = values[sample]
+    if (!predicate(value)) continue
+    const distance = Math.abs(value - target)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      chosen = sample
+    }
+  }
+  return chosen
+}
+
 function buildRepresentativeTrial(
   plant: Plant,
   scenario: Scenario,
@@ -72,6 +105,7 @@ function buildRepresentativeTrial(
   sample: number,
   samples: number,
   median: number,
+  selection: RepresentativeTrial['selection'],
 ): RepresentativeTrial {
   const shiftEntries = plant.workers
     .map((worker, globalIndex) => ({ worker, globalIndex }))
@@ -140,7 +174,7 @@ function buildRepresentativeTrial(
     shift,
     trialIndex: sample + 1,
     sampleCount: samples,
-    selection: 'median-shortfall',
+    selection,
     medianShortfall: median,
     shortfall,
     fullCoverage: solved.full,
@@ -236,19 +270,43 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
   stationRisks.sort((a, b) => b.uncoveredProbability - a.uncoveredProbability || b.failureShare - a.failureShare)
   const worst = stationRisks[0]
 
-  const representativeTrials = Object.fromEntries(SHIFTS.map(shift => {
-    const median = medianShortfall(shortfalls[shift])
-    let chosenSample = 0
-    let bestDistance = Infinity
-    for (let sample = 0; sample < shortfalls[shift].length; sample++) {
-      const distance = Math.abs(shortfalls[shift][sample] - median)
-      if (distance < bestDistance) {
-        bestDistance = distance
-        chosenSample = sample
-      }
+  const trialSets = Object.fromEntries(SHIFTS.map(shift => {
+    const values = shortfalls[shift]
+    const typicalMedian = medianShortfall(values)
+    const typicalSample = closestSample(values, typicalMedian)
+    const failingValues = values.filter(value => value > 0)
+    const failureRate = 100 * failingValues.length / samples
+
+    let failureTrial: RepresentativeTrial | null = null
+    if (failingValues.length > 0) {
+      const failingMedian = medianShortfall(failingValues)
+      const failingSample = closestSample(values, failingMedian, value => value > 0)
+      failureTrial = buildRepresentativeTrial(
+        plant,
+        scenario,
+        shift,
+        failingSample,
+        samples,
+        failingMedian,
+        'median-failing-shortfall',
+      )
     }
-    return [shift, buildRepresentativeTrial(plant, scenario, shift, chosenSample, samples, median)]
-  })) as Record<Shift, RepresentativeTrial>
+
+    return [shift, {
+      shift,
+      failureRate,
+      typicalTrial: buildRepresentativeTrial(
+        plant,
+        scenario,
+        shift,
+        typicalSample,
+        samples,
+        typicalMedian,
+        'median-shortfall',
+      ),
+      failureTrial,
+    }]
+  })) as Record<Shift, RepresentativeTrialSet>
 
   return {
     samples,
@@ -265,7 +323,7 @@ export function simulate(plant: Plant, scenario: Scenario, samples = 5000): SimR
     worst,
     criticalSkillCoverage: 100 - stationRisks.reduce((s, r) => s + r.uncoveredProbability, 0) / stationRisks.length,
     attribution: [],
-    representativeTrials,
+    trialSets,
   }
 }
 

@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import { generatePlant } from '../sim/plant'
-import type { Shift, SimResult, TrialStationState } from '../sim/types'
+import type { RepresentativeTrial, Shift, SimResult, TrialStationState } from '../sim/types'
 import { useTwinStore } from '../state/store'
 import { GlassPanel, SectionHeading } from './ui'
 
@@ -38,9 +38,8 @@ class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode
   }
 }
 
-function FloorFallback({ result, shift, seed }: { result: SimResult; shift: Shift; seed: number }) {
+function FloorFallback({ trial, seed }: { trial: RepresentativeTrial; seed: number }) {
   const plant = useMemo(() => generatePlant(seed), [seed])
-  const trial = result.representativeTrials[shift]
   const stationState = useMemo(() => new Map(trial.stations.map(s => [s.stationId, s])), [trial])
 
   return <GlassPanel className="factory-fallback">
@@ -70,12 +69,20 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
     [result],
   )
   const [shift, setShift] = useState<Shift>(weakestShift)
+  const initialTrialSet = result.trialSets[weakestShift]
+  const [trialMode, setTrialMode] = useState<'typical' | 'failure'>(
+    initialTrialSet.failureRate >= 5 && initialTrialSet.failureTrial ? 'failure' : 'typical',
+  )
   const [webgl, setWebgl] = useState<boolean | null>(null)
   const [onscreen, setOnscreen] = useState(true)
   const [tabVisible, setTabVisible] = useState(() => typeof document === 'undefined' || document.visibilityState === 'visible')
 
   useEffect(() => setWebgl(webglAvailable()), [])
   useEffect(() => setShift(weakestShift), [weakestShift, result])
+  useEffect(() => {
+    const next = result.trialSets[shift]
+    setTrialMode(next.failureRate >= 5 && next.failureTrial ? 'failure' : 'typical')
+  }, [shift, result])
 
   useEffect(() => {
     const node = container.current
@@ -94,8 +101,17 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [])
 
-  const trial = result.representativeTrials[shift]
-  const fallback = <FloorFallback result={result} shift={shift} seed={seed} />
+  const trialSet = result.trialSets[shift]
+  const trial = trialMode === 'failure' && trialSet.failureTrial ? trialSet.failureTrial : trialSet.typicalTrial
+  const isNight = shift === 'Night'
+  const failurePct = trialSet.failureRate
+  const typicalLabel = isNight ? 'Typical night' : `Typical ${shift.toLowerCase()} shift`
+  const failureLabel = trialSet.failureTrial
+    ? isNight
+      ? `A failing night (happens on ${failurePct.toFixed(0)}% of nights)`
+      : `A failing ${shift.toLowerCase()} shift (happens on ${failurePct.toFixed(0)}%)`
+    : `No failures in ${result.samples.toLocaleString()} trials`
+  const fallback = <FloorFallback trial={trial} seed={seed} />
 
   return <section id="floor" className="content-section factory-section" ref={container}>
     <div className="factory-heading-row">
@@ -104,16 +120,34 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
         title="One real simulated shift, rendered as a factory."
         body="This view uses a representative Monte Carlo trial closest to the median staffing shortfall. Worker positions, andons and throughput are model outputs—not decorative states."
       />
-      <div className="shift-selector" role="group" aria-label="Factory lighting shift">
-        {(['Early','Late','Night'] as Shift[]).map(value =>
+      <div className="factory-control-stack">
+        <div className="shift-selector" role="group" aria-label="Factory lighting shift">
+          {(['Early','Late','Night'] as Shift[]).map(value =>
+            <button
+              type="button"
+              key={value}
+              className={shift === value ? 'active' : ''}
+              aria-pressed={shift === value}
+              onClick={() => setShift(value)}
+            >{value}</button>
+          )}
+        </div>
+        <div className="trial-selector" role="group" aria-label="Representative trial view">
           <button
             type="button"
-            key={value}
-            className={shift === value ? 'active' : ''}
-            aria-pressed={shift === value}
-            onClick={() => setShift(value)}
-          >{value}</button>
-        )}
+            className={trialMode === 'typical' ? 'active' : ''}
+            aria-pressed={trialMode === 'typical'}
+            onClick={() => setTrialMode('typical')}
+          >{typicalLabel}</button>
+          <button
+            type="button"
+            className={trialMode === 'failure' ? 'active' : ''}
+            aria-pressed={trialMode === 'failure'}
+            disabled={!trialSet.failureTrial}
+            title={!trialSet.failureTrial ? `No failures in ${result.samples.toLocaleString()} trials` : undefined}
+            onClick={() => setTrialMode('failure')}
+          >{failureLabel}</button>
+        </div>
       </div>
     </div>
 
@@ -127,6 +161,8 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
         <i/>
         <div><span>REPRESENTATIVE TRIAL</span><strong>#{trial.trialIndex}</strong><small>of {trial.sampleCount.toLocaleString()}</small></div>
         <i/>
+        <div><span>DISPLAYED</span><strong>{trialMode === 'failure' ? 'FAILING' : 'TYPICAL'}</strong><small>{failurePct.toFixed(1)}% shift failure rate</small></div>
+        <i/>
         <div className="hud-compact"><span>VIEW</span><strong>{reducedMotion ? 'STATIC' : onscreen && tabVisible ? 'ACTIVE' : 'PAUSED'}</strong></div>
       </div>
 
@@ -136,6 +172,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
         <Suspense fallback={<div className="factory-loading"><span>LOADING LIVING FACTORY</span><i/></div>}>
           <FactoryFloorScene
             result={result}
+            trial={trial}
             shift={shift}
             seed={seed}
             active={onscreen && tabVisible}
