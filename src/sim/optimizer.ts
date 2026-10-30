@@ -105,6 +105,35 @@ function chooseRebalance(plant: Plant, scenario: Scenario, current: SimResult, m
   return { plant: working, moved, evaluated }
 }
 
+const ADJACENT: Record<Shift, Shift[]> = {
+  Early: ['Night', 'Late'],
+  Late: ['Early', 'Night'],
+  Night: ['Late', 'Early'],
+}
+
+function buildHoldoverPlant(plant: Plant, scenario: Scenario, current: SimResult, cap = 3) {
+  const working = clonePlant(plant)
+  const target = current.worst
+  const adjacent = new Set(ADJACENT[target.shift])
+  const candidates = plant.workers
+    .filter(worker => adjacent.has(worker.shift) && activeStationIds(worker, scenario).includes(target.stationId))
+    .sort((a,b) => b.qualifications.length - a.qualifications.length)
+    .slice(0, cap)
+
+  const nextId = Math.max(...working.workers.map(worker => worker.id)) + 1
+  candidates.forEach((worker, index) => {
+    working.workers.push({
+      ...worker,
+      id: nextId + index,
+      shift: target.shift,
+      holdoverFraction: .25,
+      qualifications: worker.qualifications.map(q => ({ ...q })),
+    })
+  })
+
+  return { plant: working, count: candidates.length, target }
+}
+
 function asIntervention(
   id: Intervention['id'],
   title: string,
@@ -139,10 +168,11 @@ export function optimize(plant: Plant, scenario: Scenario, _current: SimResult):
   const rebalance = chooseRebalance(plant, targetScenario, before, 2)
   const rebalanceResult = sim(rebalance.plant, targetScenario, VERIFY_SAMPLES)
 
-  // Phase 1 keeps the existing conservative relief approximation, but verifies it
-  // at exactly the same week, N and random trials as every other option.
-  const overtimeScenario: Scenario = { ...targetScenario, demandPct: Math.max(0, targetScenario.demandPct - Math.min(5, targetScenario.demandPct)) }
-  const overtimeResult = sim(plant, overtimeScenario, VERIFY_SAMPLES)
+  // Temporary holdovers are explicit people capacity, not demand relief.
+  // Up to three qualified workers from adjacent shifts may extend by <= 2h,
+  // represented as 25% exposure in the target shift. The 10h/day cap is binding.
+  const overtime = buildHoldoverPlant(plant, targetScenario, before, 3)
+  const overtimeResult = sim(overtime.plant, targetScenario, VERIFY_SAMPLES)
 
   const trainingFocus = sim(training.plant, targetScenario, SEARCH_SAMPLES)
   const combinedRebalance = chooseRebalance(training.plant, targetScenario, trainingFocus, 1)
@@ -165,9 +195,13 @@ export function optimize(plant: Plant, scenario: Scenario, _current: SimResult):
         : ['No safe donor move improves the target-week scenario'],
     ),
     asIntervention(
-      'overtime', 'Overtime / temporary relief', 'Short-term contingency under a conservative capacity cap',
+      'overtime', 'Holdover coverage', 'Short-term contingency using capped adjacent-shift extensions',
       before, overtimeResult, targetWeek, 0,
-      ['Model up to 5% equivalent short-term demand relief', 'Do not treat overtime as permanent capacity'],
+      [
+        `Capped: ${overtime.count} holdovers at daily limit`,
+        `Each holdover covers at most 25% of the ${overtime.target.shift} shift`,
+        '10 h/day cap; never treated as permanent capacity',
+      ],
       { capped: true },
     ),
   ]
@@ -192,7 +226,7 @@ export function optimize(plant: Plant, scenario: Scenario, _current: SimResult):
   const plantById: Record<Intervention['id'], Plant> = {
     training: training.plant,
     rebalance: rebalance.plant,
-    overtime: plant,
+    overtime: overtime.plant,
     combined: combinedRebalance.plant,
   }
 
