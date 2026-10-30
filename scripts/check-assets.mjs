@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { inflateSync } from 'node:zlib'
 
 const roots=['public/models']
 const extensions=new Set(['.glb','.gltf','.bin','.ktx2'])
@@ -37,6 +38,29 @@ function glbJson(file){
   throw new Error(`${file} has no GLB JSON chunk`)
 }
 
+function validatePng(file){
+  const b=fs.readFileSync(file)
+  const pngSignature=Buffer.from([137,80,78,71,13,10,26,10])
+  if(b.length<45 || !b.subarray(0,8).equals(pngSignature)) throw new Error(`Invalid PNG signature: ${file}`)
+  const width=b.readUInt32BE(16),height=b.readUInt32BE(20)
+  if(width<16 || height<16) throw new Error(`Texture must be at least 16x16: ${file}`)
+  let offset=8, compressed=[]
+  while(offset+12<=b.length){
+    const size=b.readUInt32BE(offset),kind=b.toString('ascii',offset+4,offset+8)
+    if(offset+12+size>b.length) throw new Error(`Truncated PNG chunk: ${file}`)
+    if(kind==='IDAT') compressed.push(b.subarray(offset+8,offset+8+size))
+    offset+=size+12
+    if(kind==='IEND') break
+  }
+  if(!compressed.length) throw new Error(`No IDAT data in PNG: ${file}`)
+  try{
+    const uncompressed=inflateSync(Buffer.concat(compressed))
+    if(!uncompressed.length) throw new Error('empty image')
+  }catch{
+    throw new Error(`Undecodable PNG image data: ${file}`)
+  }
+}
+
 function requireNames(file,property,names){
   const json=glbJson(file)
   const available=new Set((json[property]??[]).map(item=>item?.name).filter(Boolean))
@@ -61,6 +85,9 @@ for(const item of files){
           const resolved=path.resolve(assetRoot,uri)
           if(!resolved.startsWith(assetRoot+path.sep) || !fs.existsSync(resolved)){
             throw new Error(`Missing or unsafe ${kind} URI in ${item.file}: ${entry.uri}`)
+          }
+          if(kind==='images' && path.extname(resolved).toLowerCase()==='.png'){
+            validatePng(resolved)
           }
         }
       }
