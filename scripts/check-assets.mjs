@@ -49,6 +49,18 @@ const total=files.reduce((sum,item)=>sum+item.bytes,0)
 
 for(const item of files){
   console.log(`${item.file}: ${(item.bytes/1024).toFixed(1)} KiB`)
+  // Embedded images and buffer views are self-contained. Relative image URIs
+  // inside GLBs silently trigger 404s when deployed under the Pages base path.
+  if(path.extname(item.file).toLowerCase()==='.glb'){
+    const json=glbJson(item.file)
+    for(const kind of ['images','buffers']){
+      for(const entry of json[kind]??[]){
+        if(entry.uri && !entry.uri.startsWith('data:')){
+          throw new Error(`External ${kind} URI in ${item.file}: ${entry.uri}`)
+        }
+      }
+    }
+  }
 }
 console.log(`Self-hosted model payload: ${(total/1024/1024).toFixed(2)} MiB / 3.00 MiB budget`)
 
