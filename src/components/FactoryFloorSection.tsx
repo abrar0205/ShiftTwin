@@ -1,8 +1,9 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { generatePlant } from '../sim/plant'
 import type { RepresentativeTrial, Shift, SimResult, TrialStationState } from '../sim/types'
 import { useTwinStore } from '../state/store'
-import { GlassPanel, SectionHeading } from './ui'
+import { AnimatedNumber, GlassPanel, Icon, SectionHeading } from './ui'
 
 const FactoryFloorScene = lazy(() => import('./FactoryFloorScene'))
 
@@ -20,6 +21,13 @@ function webglAvailable() {
 
 function toneForStation(station: TrialStationState) {
   return station.status === 'staffed' ? 'ready' : station.status === 'short' ? 'watch' : 'risk'
+}
+
+function trialForMode(result: SimResult | null, shift: Shift, mode: 'typical' | 'failure') {
+  if (!result) return null
+  const set = result.trialSets[shift]
+  if (mode === 'failure' && set.failureTrial) return set.failureTrial
+  return set.typicalTrial
 }
 
 class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -62,8 +70,25 @@ function FloorFallback({ trial, seed }: { trial: RepresentativeTrial; seed: numb
 }
 
 export function FactoryFloorSection({ result, reducedMotion }: { result: SimResult; reducedMotion: boolean }) {
-  const { seed } = useTwinStore()
+  const {
+    seed,
+    previousResult,
+    runId,
+    healId,
+    sequenceSkipId,
+    skipSequence,
+    plan,
+    applyingPlan,
+    completePlanApply,
+  } = useTwinStore()
+
   const container = useRef<HTMLDivElement>(null)
+  const lastRunHandled = useRef(0)
+  const lastHealHandled = useRef(0)
+  const lastSkipHandled = useRef(sequenceSkipId)
+  const runTimers = useRef<number[]>([])
+  const healTimers = useRef<number[]>([])
+
   const weakestShift = useMemo(
     () => [...result.shiftResults].sort((a,b) => a.coverageProbability - b.coverageProbability)[0]?.shift ?? 'Early',
     [result],
@@ -76,6 +101,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
   const [webgl, setWebgl] = useState<boolean | null>(null)
   const [onscreen, setOnscreen] = useState(true)
   const [tabVisible, setTabVisible] = useState(() => typeof document === 'undefined' || document.visibilityState === 'visible')
+  const [sequenceMode, setSequenceMode] = useState<'idle' | 'run' | 'heal'>('idle')
 
   useEffect(() => setWebgl(webglAvailable()), [])
   useEffect(() => setShift(weakestShift), [weakestShift, result])
@@ -103,6 +129,95 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
 
   const trialSet = result.trialSets[shift]
   const trial = trialMode === 'failure' && trialSet.failureTrial ? trialSet.failureTrial : trialSet.typicalTrial
+  const previousTrial = trialForMode(previousResult, shift, trialMode)
+  const planResult = plan?.recommended.result ?? null
+  const healTrial = planResult ? planResult.trialSets[shift].typicalTrial : null
+
+  const [hudTrial, setHudTrial] = useState<RepresentativeTrial>(trial)
+
+  useEffect(() => {
+    if (sequenceMode === 'idle') setHudTrial(trial)
+  }, [trial, sequenceMode])
+
+  const clearTimers = (timers: React.MutableRefObject<number[]>) => {
+    timers.current.forEach(id => window.clearTimeout(id))
+    timers.current = []
+  }
+
+  useEffect(() => () => {
+    clearTimers(runTimers)
+    clearTimers(healTimers)
+  }, [])
+
+  useEffect(() => {
+    if (!runId || runId === lastRunHandled.current) return
+    lastRunHandled.current = runId
+    clearTimers(runTimers)
+
+    if (reducedMotion) {
+      setHudTrial(trial)
+      setSequenceMode('idle')
+      return
+    }
+
+    setHudTrial(previousTrial ?? trial)
+    setSequenceMode('run')
+    runTimers.current.push(window.setTimeout(() => setHudTrial(trial), 1550))
+    runTimers.current.push(window.setTimeout(() => setSequenceMode('idle'), 3550))
+  // Trial values are intentionally captured at the moment this runId is handled.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId])
+
+  useEffect(() => {
+    if (!healId || healId === lastHealHandled.current || !applyingPlan || !healTrial) return
+    lastHealHandled.current = healId
+    clearTimers(healTimers)
+
+    if (reducedMotion) {
+      setHudTrial(healTrial)
+      completePlanApply()
+      setSequenceMode('idle')
+      return
+    }
+
+    setHudTrial(trial)
+    setSequenceMode('heal')
+    healTimers.current.push(window.setTimeout(() => setHudTrial(healTrial), 1350))
+    healTimers.current.push(window.setTimeout(() => {
+      completePlanApply()
+      setSequenceMode('idle')
+    }, 3350))
+  // Sequence inputs are captured when healId changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [healId])
+
+  useEffect(() => {
+    if (sequenceSkipId === lastSkipHandled.current) return
+    lastSkipHandled.current = sequenceSkipId
+    if (sequenceMode === 'idle') return
+
+    clearTimers(runTimers)
+    clearTimers(healTimers)
+
+    if (sequenceMode === 'heal' && healTrial) {
+      setHudTrial(healTrial)
+      completePlanApply()
+    } else {
+      setHudTrial(trial)
+    }
+    setSequenceMode('idle')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequenceSkipId])
+
+  useEffect(() => {
+    if (sequenceMode === 'idle') return
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') skipSequence()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [sequenceMode, skipSequence])
+
   const isNight = shift === 'Night'
   const failurePct = trialSet.failureRate
   const typicalLabel = isNight ? 'Typical night' : `Typical ${shift.toLowerCase()} shift`
@@ -111,14 +226,19 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       ? `A failing night (happens on ${failurePct.toFixed(0)}% of nights)`
       : `A failing ${shift.toLowerCase()} shift (happens on ${failurePct.toFixed(0)}%)`
     : `No failures in ${result.samples.toLocaleString()} trials`
-  const fallback = <FloorFallback trial={trial} seed={seed} />
+
+  const shortfallText = hudTrial.fullCoverage
+    ? 'full coverage'
+    : `${hudTrial.shortfall} ${hudTrial.shortfall === 1 ? 'position' : 'positions'} short`
+
+  const fallback = <FloorFallback trial={hudTrial} seed={seed} />
 
   return <section id="floor" className="content-section factory-section" ref={container}>
     <div className="factory-heading-row">
       <SectionHeading
         eyebrow="THE FLOOR, RIGHT NOW"
-        title="One real simulated shift, rendered as a factory."
-        body="This view renders one real Monte Carlo staffing state as a time-compressed production line. Worker positions, andons, station dwell and queue behavior all trace back to the selected trial."
+        title="See the constraint. Then watch the response."
+        body="One real Monte Carlo staffing state drives the floor. Run a scenario to reveal the bottleneck; apply the verified plan to watch the line recover."
       />
       <div className="factory-control-stack">
         <div className="shift-selector" role="group" aria-label="Factory lighting shift">
@@ -129,6 +249,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
               className={shift === value ? 'active' : ''}
               aria-pressed={shift === value}
               onClick={() => setShift(value)}
+              disabled={sequenceMode !== 'idle'}
             >{value}</button>
           )}
         </div>
@@ -138,12 +259,13 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
             className={trialMode === 'typical' ? 'active' : ''}
             aria-pressed={trialMode === 'typical'}
             onClick={() => setTrialMode('typical')}
+            disabled={sequenceMode !== 'idle'}
           >{typicalLabel}</button>
           <button
             type="button"
             className={trialMode === 'failure' ? 'active' : ''}
             aria-pressed={trialMode === 'failure'}
-            disabled={!trialSet.failureTrial}
+            disabled={!trialSet.failureTrial || sequenceMode !== 'idle'}
             title={!trialSet.failureTrial ? `No failures in ${result.samples.toLocaleString()} trials` : undefined}
             onClick={() => setTrialMode('failure')}
           >{failureLabel}</button>
@@ -151,20 +273,37 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       </div>
     </div>
 
-    <div className="factory-shell">
+    <div
+      className={`factory-shell ${sequenceMode !== 'idle' ? 'sequence-active' : ''}`}
+      onClick={() => { if (sequenceMode !== 'idle') skipSequence() }}
+    >
       <div className="factory-shell-hud factory-operating-hud">
-        <div><span>LINE RATE</span><strong>{trial.lineRateJPH.toFixed(1)} JPH</strong><small>target {trial.targetLineRateJPH.toFixed(1)}</small></div>
+        <div><span>LINE RATE</span><strong><AnimatedNumber value={hudTrial.lineRateJPH} decimals={1} reducedMotion={reducedMotion}/> JPH</strong><small>target {hudTrial.targetLineRateJPH.toFixed(1)}</small></div>
         <i/>
-        <div><span>CARS LOST</span><strong>{trial.carsLostPerShift.toFixed(1)}</strong><small>{trial.shiftHours}h shift</small></div>
+        <div><span>CARS LOST</span><strong><AnimatedNumber value={hudTrial.carsLostPerShift} decimals={1} reducedMotion={reducedMotion}/></strong><small>{hudTrial.shiftHours}h shift</small></div>
         <i/>
-        <div><span>SHIFT</span><strong>{shift}</strong><small>{trial.fullCoverage ? 'full coverage' : `${trial.shortfall} positions short`}</small></div>
+        <div><span>SHIFT</span><strong>{shift}</strong><small>{shortfallText}</small></div>
         <i/>
-        <div><span>REPRESENTATIVE TRIAL</span><strong>#{trial.trialIndex}</strong><small>of {trial.sampleCount.toLocaleString()}</small></div>
+        <div><span>REPRESENTATIVE TRIAL</span><strong>#{hudTrial.trialIndex}</strong><small>of {hudTrial.sampleCount.toLocaleString()}</small></div>
         <i/>
         <div><span>DISPLAYED</span><strong>{trialMode === 'failure' ? 'FAILING' : 'TYPICAL'}</strong><small>{failurePct.toFixed(1)}% shift failure rate</small></div>
         <i/>
         <div className="hud-compact"><span>VIEW</span><strong>{reducedMotion ? 'STATIC' : onscreen && tabVisible ? 'ACTIVE' : 'PAUSED'}</strong></div>
       </div>
+
+      <AnimatePresence>
+        {sequenceMode !== 'idle' && <motion.div
+          className="factory-sequence-status"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+        >
+          <span>{sequenceMode === 'run' ? 'SCENARIO PROPAGATING' : 'PLAN HEAL IN PROGRESS'}</span>
+          <button type="button" onClick={event => { event.stopPropagation(); skipSequence() }}>
+            <Icon name="skip" size={13}/> Skip · Esc
+          </button>
+        </motion.div>}
+      </AnimatePresence>
 
       {webgl === false ? fallback : webgl === null ? <div className="factory-loading">
         <span>CHECKING GRAPHICS CAPABILITY</span><i/>
@@ -173,6 +312,12 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
           <FactoryFloorScene
             result={result}
             trial={trial}
+            previousTrial={previousTrial}
+            healTrial={healTrial}
+            failureRate={failurePct}
+            runId={runId}
+            healId={healId}
+            skipId={sequenceSkipId}
             shift={shift}
             seed={seed}
             active={onscreen && tabVisible}
@@ -186,7 +331,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       <span><b className="ready"/> fully staffed</span>
       <span><b className="watch"/> short by 1</span>
       <span><b className="risk"/> short by 2+</span>
-      <p>Motion is time-compressed 18× for legibility. Station dwell scales with model throughput, zero-capacity cells hold indefinitely, and queue/starvation behavior emerges from slot availability.</p>
+      <p>18× visual time compression. Queueing and starvation emerge from station throughput; the camera and callout explain the selected trial without changing its model state.</p>
     </div>
   </section>
 }
