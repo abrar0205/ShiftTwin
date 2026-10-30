@@ -1,7 +1,7 @@
 {
   "name": "shifttwin",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,9 @@
     "test": "vitest run",
     "preview": "vite preview",
     "check:runtime-assets": "node scripts/check-runtime-assets.mjs",
-    "check:assets": "node scripts/check-assets.mjs"
+    "check:assets": "node scripts/check-assets.mjs",
+    "assets": "node scripts/check-assets.mjs",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@fontsource/inter-tight": "^5.1.1",
@@ -40,5 +42,8 @@
     "vite": "^6.0.5",
     "vitest": "^2.1.8",
     "@types/three": "^0.170.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
