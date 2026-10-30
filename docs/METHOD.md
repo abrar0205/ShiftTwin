@@ -119,7 +119,7 @@ Every displayed before/after intervention pair is re-simulated:
 
 The optimizer evaluates cross-training, safe shift rebalancing, temporary relief and a combined plan. The recommendation is the highest verified readiness result, with shorter lead time used only as a tie-break.
 
-Phase 1 retains the conservative demand-relief approximation for overtime. A later model revision replaces it with explicit holdover hours.
+v1.4 replaces the earlier demand-relief approximation with the explicit capped holdover model described below.
 
 ## Shapley attribution
 
@@ -152,7 +152,7 @@ The demo does **not** claim legal compliance.
 - no stochastic demand process beyond the user-selected scenario;
 - renewal rate is a scenario assumption, not an empirical forecast;
 - training quality and worker preference are not modeled;
-- overtime remains deliberately approximate in v1.1 Phase 1;
+- temporary holdovers are fractional planning abstractions rather than detailed working-time schedules;
 - readiness measures staffing feasibility, not production throughput or safety performance.
 
 
