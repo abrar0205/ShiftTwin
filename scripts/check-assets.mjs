@@ -56,7 +56,12 @@ for(const item of files){
     for(const kind of ['images','buffers']){
       for(const entry of json[kind]??[]){
         if(entry.uri && !entry.uri.startsWith('data:')){
-          throw new Error(`External ${kind} URI in ${item.file}: ${entry.uri}`)
+          const uri=decodeURIComponent(entry.uri)
+          const assetRoot=path.resolve(path.dirname(item.file))
+          const resolved=path.resolve(assetRoot,uri)
+          if(!resolved.startsWith(assetRoot+path.sep) || !fs.existsSync(resolved)){
+            throw new Error(`Missing or unsafe ${kind} URI in ${item.file}: ${entry.uri}`)
+          }
         }
       }
     }
