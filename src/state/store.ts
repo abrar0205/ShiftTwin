@@ -37,12 +37,18 @@ interface Store {
   scenario: Scenario
   baseline: SimResult | null
   result: SimResult | null
+  previousResult: SimResult | null
+  appliedResult: SimResult | null
   previewResult: SimResult | null
   plan: Plan | null
   timeline: TimelinePoint[]
   running: boolean
   optimizing: boolean
+  applyingPlan: boolean
   appliedPlan: boolean
+  runId: number
+  healId: number
+  sequenceSkipId: number
   reducedMotion: boolean
   error: string | null
   initialize: () => Promise<void>
@@ -51,6 +57,8 @@ interface Store {
   runScenario: () => Promise<void>
   optimize: () => Promise<void>
   applyPlan: () => Promise<void>
+  completePlanApply: () => void
+  skipSequence: () => void
   reset: () => Promise<void>
   regeneratePlant: () => Promise<void>
   setReducedMotion: (value: boolean) => void
@@ -67,12 +75,18 @@ export const useTwinStore = create<Store>((set, get) => ({
   scenario: { ...BASELINE_SCENARIO },
   baseline: null,
   result: null,
+  previousResult: null,
+  appliedResult: null,
   previewResult: null,
   plan: null,
   timeline: [],
   running: false,
   optimizing: false,
+  applyingPlan: false,
   appliedPlan: false,
+  runId: 0,
+  healId: 0,
+  sequenceSkipId: 0,
   reducedMotion: typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
   error: null,
 
@@ -87,7 +101,13 @@ export const useTwinStore = create<Store>((set, get) => ({
     }
   },
 
-  setScenario: patch => set(state => ({ scenario: { ...state.scenario, ...patch }, plan: null, appliedPlan: false })),
+  setScenario: patch => set(state => ({
+    scenario: { ...state.scenario, ...patch },
+    plan: null,
+    appliedPlan: false,
+    applyingPlan: false,
+    appliedResult: null,
+  })),
 
   runPreview: async () => {
     const generation = ++previewGeneration
@@ -102,12 +122,33 @@ export const useTwinStore = create<Store>((set, get) => ({
 
   runScenario: async () => {
     const scenario = get().scenario
+    const before = get().appliedResult ?? get().result
     previewGeneration++
-    set({ running: true, error: null, plan: null, appliedPlan: false, previewResult: null })
+    set({
+      running: true,
+      error: null,
+      plan: null,
+      appliedPlan: false,
+      applyingPlan: false,
+      appliedResult: null,
+      previewResult: null,
+      previousResult: before,
+    })
     try {
-      const result = await request<SimResult>({ type: 'simulate', plant, scenario, samples: 5000, baselineScenario: { ...BASELINE_SCENARIO } })
+      const result = await request<SimResult>({
+        type: 'simulate',
+        plant,
+        scenario,
+        samples: 5000,
+        baselineScenario: { ...BASELINE_SCENARIO },
+      })
       const timeline = await request<TimelinePoint[]>({ type: 'timeline', plant, scenario, optimized: false })
-      set({ result, timeline, running: false })
+      set(state => ({
+        result,
+        timeline,
+        running: false,
+        runId: state.runId + 1,
+      }))
     } catch (error) {
       set({ running: false, error: error instanceof Error ? error.message : String(error) })
     }
@@ -127,15 +168,39 @@ export const useTwinStore = create<Store>((set, get) => ({
 
   applyPlan: async () => {
     const { plan, scenario } = get()
-    if (!plan) return
-    set({ result: plan.recommended.result, appliedPlan: true })
+    if (!plan || get().applyingPlan || get().appliedPlan) return
+
+    set(state => ({
+      applyingPlan: true,
+      error: null,
+      healId: state.healId + 1,
+      appliedResult: null,
+    }))
+
     try {
-      const timeline = await request<TimelinePoint[]>({ type: 'timeline', plant, scenario: { ...scenario, week: plan.recommended.evaluationWeek }, optimized: true })
+      const timeline = await request<TimelinePoint[]>({
+        type: 'timeline',
+        plant,
+        scenario: { ...scenario, week: plan.recommended.evaluationWeek },
+        optimized: true,
+      })
       set({ timeline })
     } catch {
-      // plan result remains available even if timeline generation fails
+      // The verified plan result remains valid even if timeline generation fails.
     }
   },
+
+  completePlanApply: () => {
+    const plan = get().plan
+    if (!plan) return
+    set({
+      appliedResult: plan.recommended.result,
+      appliedPlan: true,
+      applyingPlan: false,
+    })
+  },
+
+  skipSequence: () => set(state => ({ sequenceSkipId: state.sequenceSkipId + 1 })),
 
   reset: async () => {
     previewGeneration++
@@ -145,7 +210,10 @@ export const useTwinStore = create<Store>((set, get) => ({
       scenario: { ...BASELINE_SCENARIO },
       plan: null,
       previewResult: null,
+      previousResult: null,
+      appliedResult: null,
       appliedPlan: false,
+      applyingPlan: false,
       result: baseline,
       timeline,
     })
@@ -155,7 +223,20 @@ export const useTwinStore = create<Store>((set, get) => ({
     previewGeneration++
     plantSeed += 1
     plant = generatePlant(plantSeed)
-    set({ seed: plantSeed, running: true, baseline: null, result: null, plan: null, previewResult: null, appliedPlan: false, scenario: { ...BASELINE_SCENARIO }, error: null })
+    set({
+      seed: plantSeed,
+      running: true,
+      baseline: null,
+      result: null,
+      previousResult: null,
+      appliedResult: null,
+      plan: null,
+      previewResult: null,
+      appliedPlan: false,
+      applyingPlan: false,
+      scenario: { ...BASELINE_SCENARIO },
+      error: null,
+    })
     try {
       const { baseline, timeline } = await buildBaseline()
       set({ baseline, result: baseline, timeline, running: false })
