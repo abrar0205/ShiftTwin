@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
 import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
 import { ContactShadows, Html, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
@@ -30,6 +30,44 @@ const MOBILE_QUERY = '(max-width: 820px)'
 
 type Tone = keyof typeof STATUS
 type MotionRef = MutableRefObject<LineMotionState>
+type SequenceKind = 'idle' | 'run' | 'heal'
+interface SceneSequence {
+  kind: SequenceKind
+  active: boolean
+  progress: number
+  elapsed: number
+}
+type SequenceRef = MutableRefObject<SceneSequence>
+type OrbitRef = MutableRefObject<ElementRef<typeof OrbitControls> | null>
+
+const COLOR_CACHE = {
+  background: {
+    Early: new THREE.Color('#101a22'),
+    Late: new THREE.Color('#20150d'),
+    Night: new THREE.Color('#04070a'),
+  },
+  ambient: {
+    Early: new THREE.Color('#b9dcf0'),
+    Late: new THREE.Color('#d8b08b'),
+    Night: new THREE.Color('#40576a'),
+  },
+  key: {
+    Early: new THREE.Color('#d8efff'),
+    Late: new THREE.Color('#ffd09a'),
+    Night: new THREE.Color('#82acd0'),
+  },
+  fill: {
+    Early: new THREE.Color('#8ec6e6'),
+    Late: new THREE.Color('#d47d4f'),
+    Night: new THREE.Color('#35536b'),
+  },
+  cell: {
+    ready: new THREE.Color('#10161a'),
+    watch: new THREE.Color('#171611'),
+    risk: new THREE.Color('#171214'),
+    starved: new THREE.Color('#080b0e'),
+  },
+} as const
 
 function toneForStation(station: TrialStationState): Tone {
   return station.status === 'staffed' ? 'ready' : station.status === 'short' ? 'watch' : 'risk'
@@ -101,26 +139,98 @@ function LocalEnvironment() {
 
 function MotionController({
   trial,
+  previousTrial,
+  healTrial,
   motionRef,
+  sequenceRef,
+  runId,
+  healId,
+  skipId,
   reducedMotion,
 }: {
   trial: RepresentativeTrial
+  previousTrial: RepresentativeTrial | null
+  healTrial: RepresentativeTrial | null
   motionRef: MotionRef
+  sequenceRef: SequenceRef
+  runId: number
+  healId: number
+  skipId: number
   reducedMotion: boolean
 }) {
+  const lastRun = useRef(0)
+  const lastHeal = useRef(0)
+  const lastSkip = useRef(skipId)
+
   useEffect(() => {
+    if (!runId || runId === lastRun.current) return
+    lastRun.current = runId
+    motionRef.current = createLineMotion(previousTrial ?? trial)
+    sequenceRef.current = {
+      kind: 'run',
+      active: !reducedMotion,
+      progress: reducedMotion ? 1 : 0,
+      elapsed: reducedMotion ? 3.5 : 0,
+    }
+  }, [runId, motionRef, previousTrial, reducedMotion, sequenceRef, trial])
+
+  useEffect(() => {
+    if (!healId || healId === lastHeal.current) return
+    lastHeal.current = healId
+    sequenceRef.current = {
+      kind: 'heal',
+      active: !reducedMotion,
+      progress: reducedMotion ? 1 : 0,
+      elapsed: reducedMotion ? 3.3 : 0,
+    }
+  }, [healId, reducedMotion, sequenceRef])
+
+  useEffect(() => {
+    if (skipId === lastSkip.current) return
+    lastSkip.current = skipId
+    const current = sequenceRef.current
+    if (!current.active) return
+    current.progress = 1
+    current.active = false
+    current.elapsed = current.kind === 'heal' ? 3.3 : 3.5
+  }, [sequenceRef, skipId])
+
+  useEffect(() => {
+    if (sequenceRef.current.active) return
     motionRef.current = createLineMotion(trial)
-  }, [trial, motionRef])
+  }, [trial, motionRef, sequenceRef])
 
   useFrame((_state, delta) => {
+    const seq = sequenceRef.current
+    if (seq.active) {
+      seq.elapsed += delta
+      const duration = seq.kind === 'heal' ? 3.3 : 3.5
+      seq.progress = Math.min(1, seq.elapsed / duration)
+      if (seq.progress >= 1) seq.active = false
+    }
+
     if (reducedMotion) return
-    advanceLineMotion(motionRef.current, trial, delta)
+
+    let activeTrial = trial
+    if (seq.kind === 'run' && seq.progress < .30 && previousTrial) activeTrial = previousTrial
+    if (seq.kind === 'heal' && seq.progress >= .52 && healTrial) activeTrial = healTrial
+    advanceLineMotion(motionRef.current, activeTrial, delta)
   }, -100)
 
   return null
 }
 
-function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: boolean }) {
+function ShiftLighting({
+  shift,
+  reducedMotion,
+  focus,
+  sequenceRef,
+}: {
+  shift: Shift
+  reducedMotion: boolean
+  focus: boolean
+  sequenceRef: SequenceRef
+}) {
   const ambient = useRef<THREE.AmbientLight>(null)
   const key = useRef<THREE.DirectionalLight>(null)
   const fill = useRef<THREE.DirectionalLight>(null)
@@ -128,32 +238,44 @@ function ShiftLighting({ shift, reducedMotion }: { shift: Shift; reducedMotion: 
   const { scene } = useThree()
 
   useEffect(() => {
-    if (!scene.background) scene.background = new THREE.Color(lighting[shift].background)
+    if (!scene.background) scene.background = COLOR_CACHE.background[shift].clone()
   }, [scene, shift])
 
   useFrame((_state, delta) => {
     const cfg = lighting[shift]
+    const colors = {
+      background: COLOR_CACHE.background[shift],
+      ambient: COLOR_CACHE.ambient[shift],
+      key: COLOR_CACHE.key[shift],
+      fill: COLOR_CACHE.fill[shift],
+    }
     const alpha = reducedMotion ? 1 : 1 - Math.exp(-4.5 * delta)
-    const bg = scene.background instanceof THREE.Color ? scene.background : new THREE.Color(cfg.background)
-    bg.lerp(new THREE.Color(cfg.background), alpha)
+    const seq = sequenceRef.current
+    const healLift = seq.kind === 'heal'
+      ? Math.max(0, Math.min(1, (seq.progress - .50) / .42))
+      : 0
+    const focusFactor = focus ? .65 + .35 * healLift : 1
+
+    const bg = scene.background instanceof THREE.Color ? scene.background : COLOR_CACHE.background[shift].clone()
+    bg.lerp(colors.background, alpha)
     scene.background = bg
 
     if (ambient.current) {
-      ambient.current.intensity = THREE.MathUtils.lerp(ambient.current.intensity, cfg.intensity * .58, alpha)
-      ambient.current.color.lerp(new THREE.Color(cfg.ambient), alpha)
+      ambient.current.intensity = THREE.MathUtils.lerp(ambient.current.intensity, cfg.intensity * .58 * focusFactor, alpha)
+      ambient.current.color.lerp(colors.ambient, alpha)
     }
     if (key.current) {
-      key.current.intensity = THREE.MathUtils.lerp(key.current.intensity, cfg.intensity, alpha)
-      key.current.color.lerp(new THREE.Color(cfg.key), alpha)
+      key.current.intensity = THREE.MathUtils.lerp(key.current.intensity, cfg.intensity * focusFactor, alpha)
+      key.current.color.lerp(colors.key, alpha)
     }
     if (fill.current) {
-      fill.current.intensity = THREE.MathUtils.lerp(fill.current.intensity, cfg.intensity * .46, alpha)
-      fill.current.color.lerp(new THREE.Color(cfg.fill), alpha)
+      fill.current.intensity = THREE.MathUtils.lerp(fill.current.intensity, cfg.intensity * .46 * focusFactor, alpha)
+      fill.current.color.lerp(colors.fill, alpha)
     }
 
     const targetPool = shift === 'Night' ? .95 : .08
     for (const pool of nightPools.current) {
-      if (pool) pool.intensity = THREE.MathUtils.lerp(pool.intensity,targetPool,alpha)
+      if (pool) pool.intensity = THREE.MathUtils.lerp(pool.intensity,targetPool * focusFactor,alpha)
     }
   })
 
