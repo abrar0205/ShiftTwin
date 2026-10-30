@@ -305,21 +305,98 @@ function ShiftLighting({
   </>
 }
 
-function AreaZone({ x, label, night }: { x: number; label: string; night: boolean }) {
+function FactoryHall({mobile,night}:{mobile:boolean;night:boolean}){
+  const columns=useMemo(()=>[-18,-12,-6,0,6,12,18],[])
+  const windows=useMemo(()=>[-18,-13.5,-9,-4.5,0,4.5,9,13.5,18],[])
+
+  return <group>
+    <mesh rotation={[-Math.PI/2,0,0]} position={[0,.002,0]} receiveShadow>
+      <planeGeometry args={[46,18]}/>
+      {mobile ? <meshStandardMaterial color="#101419" roughness={.66} metalness={.16}/> :
+        <MeshReflectorMaterial
+          color="#11161b"
+          roughness={.54}
+          metalness={.18}
+          mirror={.16}
+          mixBlur={1.2}
+          mixStrength={8}
+          blur={[260,90]}
+          resolution={512}
+          depthScale={.65}
+          minDepthThreshold={.55}
+          maxDepthThreshold={1.4}
+        />}
+    </mesh>
+
+    <mesh position={[0,3.8,-8.15]} receiveShadow>
+      <boxGeometry args={[46,7.6,.34]}/>
+      <meshStandardMaterial color={night?'#0b1016':'#171d22'} roughness={.76} metalness={.16}/>
+    </mesh>
+
+    <mesh position={[-22.65,3.6,-.5]} receiveShadow>
+      <boxGeometry args={[.3,7.2,15.5]}/>
+      <meshStandardMaterial color="#12181d" roughness={.74} metalness={.18}/>
+    </mesh>
+
+    {windows.map(x=><mesh key={`window-${x}`} position={[x,5.12,-7.95]}>
+      <boxGeometry args={[3.6,1.15,.05]}/>
+      <meshStandardMaterial
+        color={night?'#24445d':'#718b99'}
+        emissive={night?'#173c59':'#44545c'}
+        emissiveIntensity={night?.82:.18}
+        roughness={.19}
+        metalness={.12}
+      />
+    </mesh>)}
+
+    <mesh position={[0,3.05,-7.48]} receiveShadow>
+      <boxGeometry args={[45,.14,1.25]}/>
+      <meshStandardMaterial color="#20272d" roughness={.58} metalness={.46}/>
+    </mesh>
+    <mesh position={[0,3.72,-6.95]}>
+      <boxGeometry args={[45,.06,.06]}/>
+      <meshStandardMaterial color="#65717a" roughness={.46} metalness={.62}/>
+    </mesh>
+
+    {columns.map(x=><group key={`column-${x}`}>
+      <mesh position={[x,3.45,-6.75]} castShadow receiveShadow>
+        <boxGeometry args={[.24,6.9,.24]}/>
+        <meshStandardMaterial color="#4c555d" roughness={.48} metalness={.58}/>
+      </mesh>
+      <mesh position={[x,6.9,0]} castShadow>
+        <boxGeometry args={[.18,.18,13.7]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+      <mesh position={[x,6.92,-6.55]} rotation={[0,0,.77]} castShadow>
+        <boxGeometry args={[4.8,.11,.11]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+      <mesh position={[x,6.92,6.55]} rotation={[0,0,-.77]} castShadow>
+        <boxGeometry args={[4.8,.11,.11]}/>
+        <meshStandardMaterial color="#394149" roughness={.46} metalness={.64}/>
+      </mesh>
+    </group>)}
+
+    {[-5.6,5.6].map(z=><group key={z}>
+      {[-20,-10,0,10,20].map(x=><mesh key={x} position={[x,.055,z]}>
+        <boxGeometry args={[7.2,.018,.05]}/>
+        <meshBasicMaterial color="#aa882d" transparent opacity={.48}/>
+      </mesh>)}
+    </group>)}
+  </group>
+}
+
+function AreaZone({ x, label }: { x: number; label: string }) {
   return <group position={[x,0,0]}>
-    <mesh position={[0,.015,0]} receiveShadow>
-      <boxGeometry args={[10.7,.03,8.2]}/>
-      <meshStandardMaterial color={night ? '#0c1117' : '#151b20'} roughness={.82} metalness={.08}/>
+    <mesh position={[0,.045,-3.75]}>
+      <boxGeometry args={[10.1,.025,.06]}/>
+      <meshBasicMaterial color="#d3a72f" transparent opacity={.62}/>
     </mesh>
-    <mesh position={[0,.04,-3.75]}>
-      <boxGeometry args={[10.1,.03,.06]}/>
-      <meshBasicMaterial color="#d3a72f"/>
+    <mesh position={[0,.045,3.75]}>
+      <boxGeometry args={[10.1,.025,.06]}/>
+      <meshBasicMaterial color="#d3a72f" transparent opacity={.62}/>
     </mesh>
-    <mesh position={[0,.04,3.75]}>
-      <boxGeometry args={[10.1,.03,.06]}/>
-      <meshBasicMaterial color="#d3a72f"/>
-    </mesh>
-    <Html position={[-4.65,.06,-3.3]} transform distanceFactor={13} occlude={false}>
+    <Html position={[-4.65,.07,-3.3]} transform distanceFactor={13} occlude={false}>
       <div className="factory-area-label">{label}</div>
     </Html>
   </group>
