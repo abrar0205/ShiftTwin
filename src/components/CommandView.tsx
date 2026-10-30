@@ -36,7 +36,7 @@ function ReadinessGauge({ result, ghost, reducedMotion }: { result: SimResult; g
       <span className="out-of">/100</span>
       <StatusPill value={value} />
     </div>
-    <div className="confidence-label">80% Monte Carlo interval · {result.p10.toFixed(1)}–{result.p90.toFixed(1)}</div>
+    <div className="confidence-label">p10–p90 batch readiness · {result.uncertaintyBand.p10.toFixed(1)}–{result.uncertaintyBand.p90.toFixed(1)} · {result.uncertaintyBand.batches} batches</div>
   </div>
 }
 
@@ -44,7 +44,6 @@ function DriverTile({ label, value, unit, delta, status }: { label: string; valu
   return <GlassPanel className="driver-tile">
     <span className="driver-label">{label}</span>
     <div className="driver-value">{value}<small>{unit}</small></div>
-    <div className="driver-spark" aria-hidden="true"><i/><i/><i/><i/><i/><i/></div>
     {delta && <span className={`driver-delta ${status ?? ''}`}>{delta}</span>}
   </GlassPanel>
 }
@@ -57,8 +56,8 @@ export function CommandView({ result, preview, scenario, reducedMotion }: { resu
   return <section id="command" className="command-section">
     <div className="command-copy">
       <span className="eyebrow">WORKFORCE RESILIENCE SIMULATOR</span>
-      <h1>Simulate workforce changes before they become <em>production constraints.</em></h1>
-      <p>ShiftTwin estimates the probability that every critical station can be covered by a qualified person, then tests interventions against the same synthetic plant.</p>
+      <h1>See workforce risk.<br/><em>Before the line feels it.</em></h1>
+      <p>ShiftTwin turns qualification, shift and absence uncertainty into a living production twin—then verifies which intervention actually restores coverage.</p>
     </div>
 
     <div className="command-grid">
@@ -70,8 +69,8 @@ export function CommandView({ result, preview, scenario, reducedMotion }: { resu
 
       <div className="driver-grid">
         <DriverTile label="People availability" value={availability.toFixed(1)} unit="%" delta={availability === baselineAvailability ? 'baseline' : `${availability-baselineAvailability > 0 ? '+' : ''}${(availability-baselineAvailability).toFixed(1)} pts`} status={availability > 92 ? 'ready':'watch'} />
-        <DriverTile label="Critical skill coverage" value={result.criticalSkillCoverage.toFixed(1)} unit="%" delta="simulation-derived" status={result.criticalSkillCoverage > 94 ? 'ready':result.criticalSkillCoverage > 85 ? 'watch':'risk'} />
-        <DriverTile label="Training readiness" value={scenario.trainingCoverage.toFixed(0)} unit="%" delta={scenario.trainingCoverage === BASELINE_SCENARIO.trainingCoverage ? 'baseline' : `${scenario.trainingCoverage-BASELINE_SCENARIO.trainingCoverage} pts`} status={scenario.trainingCoverage >= 92 ? 'ready':'watch'} />
+        <DriverTile label="Station-shift coverage" value={result.stationShiftCoverage.toFixed(1)} unit="%" delta="5,000-trial basis" status={result.stationShiftCoverage > 97 ? 'ready':result.stationShiftCoverage > 90 ? 'watch':'risk'} />
+        <DriverTile label="Expected shortfall" value={result.expectedShortfall.toFixed(2)} unit="" delta="person-shifts / day" status={result.expectedShortfall < .5 ? 'ready':result.expectedShortfall < 1.5 ? 'watch':'risk'} />
         <DriverTile label="Production demand" value={scenario.demandPct === 0 ? '0' : `+${scenario.demandPct}`} unit="%" delta={scenario.demandPct === 0 ? 'baseline':'scenario'} status={scenario.demandPct < 10 ? 'ready':scenario.demandPct < 20 ? 'watch':'risk'} />
       </div>
     </div>
