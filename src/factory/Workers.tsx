@@ -22,7 +22,7 @@ function Worker({position,accent=false,walking=false}:{position:[number,number,n
 
 export function StationWorkers({positions,focusIndex,heal}:{positions:[number,number,number][];focusIndex:number;heal:boolean}){
   return <group>
-    {positions.map((p,i)=><Worker key={i} position={[p[0]+(i%2?.8:-.8),0,p[2]+.9]} accent={i===focusIndex&&heal}/>)}
+    {positions.map((p,i)=><Worker key={i} position={[p[0]+(i%2 ? .8 : -.8),0,p[2]+.9]} accent={i===focusIndex&&heal}/>)}
     {heal&&<Worker position={[positions[focusIndex][0]-2.6,0,positions[focusIndex][2]-2]} accent walking/>}
   </group>
 }
