@@ -689,16 +689,21 @@ function TrialWorkers({
   positions,
   trial,
   motionRef,
+  sequenceRef,
 }: {
   stations: Station[]
   positions: number[]
   trial: RepresentativeTrial
   motionRef: MotionRef
+  sequenceRef: SequenceRef
 }) {
   const refs = useRef<Array<THREE.Group | null>>([])
+  const ghostBodies = useRef<Array<THREE.MeshStandardMaterial | null>>([])
+  const ghostHelmets = useRef<Array<THREE.MeshStandardMaterial | null>>([])
+
   const layout = useMemo(() => {
     const workers: WorkerVisual[] = []
-    const empty: Array<{position:[number,number,number];stationIndex:number}> = []
+    const empty: Array<{position:[number,number,number];stationIndex:number;face:number}> = []
 
     stations.forEach((station,index) => {
       const state=trial.stations.find(s=>s.stationId===station.id)
@@ -730,7 +735,13 @@ function TrialWorkers({
         })
       }
 
-      for(;cursor<spots.length;cursor++) empty.push({position:spots[cursor].position,stationIndex:index})
+      for(;cursor<spots.length;cursor++) {
+        empty.push({
+          position:spots[cursor].position,
+          stationIndex:index,
+          face:spots[cursor].face,
+        })
+      }
     })
 
     return {workers,empty}
@@ -738,6 +749,8 @@ function TrialWorkers({
 
   useFrame(() => {
     const motion=motionRef.current
+    const seq=sequenceRef.current
+
     for(let i=0;i<layout.workers.length;i++){
       const group=refs.current[i]
       if(!group) continue
@@ -750,12 +763,29 @@ function TrialWorkers({
       group.rotation.x=working ? Math.sin(motion.time*2.5+i)*.035 + .055 : 0
       group.position.y=worker.position[1] + Math.sin(motion.time*1.5+i*.4)*.012
     }
+
+    for(let i=0;i<layout.empty.length;i++){
+      const spot=layout.empty[i]
+      const body=ghostBodies.current[i]
+      const helmet=ghostHelmets.current[i]
+      if(!body||!helmet) continue
+
+      let opacity=0
+      if(seq.kind==='run'){
+        const start=.08+spot.stationIndex*.012
+        const end=start+.22
+        const p=Math.max(0,Math.min(1,(seq.progress-start)/(end-start)))
+        opacity=1-easeInOutCubic(p)
+      }
+      body.opacity=opacity*.78
+      helmet.opacity=opacity*.70
+    }
   })
 
   return <>
     {layout.workers.map((worker,i)=>
       <group
-        key={i}
+        key={`worker-${i}`}
         ref={group=>{refs.current[i]=group}}
         position={worker.position}
         rotation={[0,worker.face,0]}
@@ -768,14 +798,108 @@ function TrialWorkers({
           <sphereGeometry args={[.16,8,6]}/>
           <meshStandardMaterial color={worker.lapsed?'#6d747a':'#d5a936'} roughness={.55}/>
         </mesh>
-        {worker.lapsed && <mesh position={[.14,.10,.13]} rotation={[0,0,0]}>
+        {worker.lapsed && <mesh position={[.14,.10,.13]}>
           <circleGeometry args={[.055,12]}/>
           <meshStandardMaterial color="#f5b841" emissive="#f5b841" emissiveIntensity={1.2} toneMapped={false}/>
         </mesh>}
       </group>
     )}
-    {layout.empty.map((spot,i)=><EmptySpot key={i} position={spot.position} motionRef={motionRef}/>)}
+
+    {layout.empty.map((spot,i)=><group key={`empty-${i}`}>
+      <EmptySpot position={spot.position} motionRef={motionRef}/>
+      <group position={spot.position} rotation={[0,spot.face,0]}>
+        <mesh castShadow>
+          <capsuleGeometry args={[.13,.42,4,8]}/>
+          <meshStandardMaterial
+            ref={material=>{ghostBodies.current[i]=material}}
+            color="#8c98a3"
+            transparent
+            opacity={0}
+            roughness={.62}
+          />
+        </mesh>
+        <mesh position={[0,.38,0]} scale={[1,.52,1]}>
+          <sphereGeometry args={[.16,8,6]}/>
+          <meshStandardMaterial
+            ref={material=>{ghostHelmets.current[i]=material}}
+            color="#d5a936"
+            transparent
+            opacity={0}
+            roughness={.58}
+          />
+        </mesh>
+      </group>
+    </group>)}
   </>
+}
+
+function HealWorker({
+  x,
+  targetZ,
+  sequenceRef,
+  enabled,
+  week,
+}: {
+  x:number
+  targetZ:number
+  sequenceRef:SequenceRef
+  enabled:boolean
+  week:number | null
+}) {
+  const group=useRef<THREE.Group>(null)
+  const accent=useRef<THREE.MeshStandardMaterial>(null)
+  const body=useRef<THREE.MeshStandardMaterial>(null)
+  const start=useMemo(()=>new THREE.Vector3(x+4.4,.88,4.3),[x])
+  const control=useMemo(()=>new THREE.Vector3(x+2.2,.9,3.5),[x])
+  const end=useMemo(()=>new THREE.Vector3(x,.88,targetZ),[x,targetZ])
+  const curve=useMemo(()=>new THREE.QuadraticBezierCurve3(start,control,end),[start,control,end])
+  const point=useMemo(()=>new THREE.Vector3(),[])
+  const tangent=useMemo(()=>new THREE.Vector3(),[])
+
+  useFrame(()=>{
+    if(!group.current||!accent.current||!body.current) return
+    const seq=sequenceRef.current
+    const active=enabled && seq.kind==='heal'
+    group.current.visible=active
+    if(!active) return
+
+    const p=Math.max(0,Math.min(1,(seq.progress-.10)/.55))
+    curve.getPoint(p,point)
+    curve.getTangent(p,tangent)
+    group.current.position.copy(point)
+    group.current.rotation.y=-Math.atan2(tangent.z,tangent.x)+Math.PI/2
+    const fade=Math.min(1,p/.14)
+    body.current.opacity=fade
+    accent.current.opacity=.28*fade
+    accent.current.emissiveIntensity=1.1+(Math.sin(seq.progress*18)+1)*.35
+  })
+
+  return <group ref={group} visible={false}>
+    <mesh scale={1.13}>
+      <capsuleGeometry args={[.15,.45,4,8]}/>
+      <meshStandardMaterial
+        ref={accent}
+        color="#5cc8ff"
+        emissive="#5cc8ff"
+        emissiveIntensity={1.4}
+        transparent
+        opacity={.28}
+        wireframe
+        toneMapped={false}
+      />
+    </mesh>
+    <mesh>
+      <capsuleGeometry args={[.13,.42,4,8]}/>
+      <meshStandardMaterial ref={body} color="#a6b2bd" transparent opacity={1} roughness={.55}/>
+    </mesh>
+    <mesh position={[0,.38,0]} scale={[1,.52,1]}>
+      <sphereGeometry args={[.16,8,6]}/>
+      <meshStandardMaterial color="#5cc8ff" emissive="#5cc8ff" emissiveIntensity={.8} toneMapped={false}/>
+    </mesh>
+    {week != null && <Html position={[0,.82,0]} center distanceFactor={10} occlude={false}>
+      <div className="heal-week-chip">WEEK {week}</div>
+    </Html>}
+  </group>
 }
 
 function slotX(xs: number[], slot: number) {
