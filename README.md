@@ -56,7 +56,9 @@ The 3D floor is a model view rather than decorative animation. A selected repres
 
 The scenario sequence spotlights the actual bottleneck, while Apply Plan keeps the scenario visible and animates the verified intervention before committing the new state. Plan comparisons use 5,000 verification samples.
 
-No branded vehicle shapes, logos or external runtime assets are used.
+The visual layer uses self-hosted CC0 KayKit worker/animation assets and a generic Kenney sedan, with a procedural industrial hall, reflective concrete and adaptive desktop post-processing. No manufacturer logos or external runtime asset hosts are used.
+
+See [docs/ASSETS.md](docs/ASSETS.md) for provenance and license notes.
 
 ## Signature idea: resilience value of skill
 
@@ -81,7 +83,7 @@ See [docs/METHOD.md](docs/METHOD.md).
 
 ## Stack
 
-React 18 · TypeScript · Vite · Motion · Zustand · Three.js · React Three Fiber · Drei · D3 math utilities · Web Worker · Vitest · GitHub Pages
+React 18 · TypeScript · Vite · Motion · Zustand · Three.js · React Three Fiber · Drei · React Postprocessing · D3 math utilities · Web Worker · Vitest · GitHub Pages
 
 The simulation and optimization run entirely in the browser. No backend, database, API key or external service is required for the public demo.
 
@@ -97,6 +99,8 @@ Quality checks:
 ```bash
 npm test
 npm run build
+npm run check:assets
+npm run check:runtime-assets
 ```
 
 ## Architecture

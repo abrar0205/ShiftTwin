@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "check:runtime-assets": "node scripts/check-runtime-assets.mjs"
+    "check:runtime-assets": "node scripts/check-runtime-assets.mjs",
+    "check:assets": "node scripts/check-assets.mjs"
   },
   "dependencies": {
     "@fontsource/inter-tight": "^5.1.1",
