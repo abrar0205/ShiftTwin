@@ -387,7 +387,7 @@ function Conveyor({ xs, motionRef }: { xs: number[]; motionRef: MotionRef }) {
 }
 
 function EmptySpot({ position, motionRef }: { position: [number,number,number]; motionRef: MotionRef }) {
-  const material = useRef<THREE.MeshBasicMaterial>(null)
+  const material = useMemo(() => new THREE.MeshBasicMaterial({ color:'#75808b', transparent:true, opacity:.4 }), [])
   const segments = useMemo(() => Array.from({ length: 8 }, (_, i) => {
     const angle = i * Math.PI / 4
     return {
@@ -400,14 +400,15 @@ function EmptySpot({ position, motionRef }: { position: [number,number,number]; 
     }
   }), [position])
 
+  useEffect(() => () => material.dispose(), [material])
+
   useFrame(() => {
-    if (material.current) material.current.opacity=.28 + (Math.sin(motionRef.current.time*1.7)+1)*.12
+    material.opacity=.28 + (Math.sin(motionRef.current.time*1.7)+1)*.12
   })
 
   return <group>
-    {segments.map((segment,i) => <mesh key={i} position={segment.position} rotation={segment.rotation}>
+    {segments.map((segment,i) => <mesh key={i} position={segment.position} rotation={segment.rotation} material={material}>
       <boxGeometry args={[.15,.018,.026]}/>
-      <meshBasicMaterial ref={i===0?material:undefined} color="#75808b" transparent opacity={.4}/>
     </mesh>)}
   </group>
 }
@@ -497,7 +498,7 @@ function TrialWorkers({
       >
         <mesh castShadow>
           <capsuleGeometry args={[.13,.42,4,8]}/>
-          <meshStandardMaterial color={worker.lapsed?'#565e66':'#9ba7b3'} roughness={worker.lapsed?.72:.58} metalness={.06}/>
+          <meshStandardMaterial color={worker.lapsed?'#565e66':'#9ba7b3'} roughness={worker.lapsed ? .72 : .58} metalness={.06}/>
         </mesh>
         <mesh position={[0,.38,0]} scale={[1,.52,1]} castShadow>
           <sphereGeometry args={[.16,8,6]}/>
@@ -684,7 +685,7 @@ function CarFleet({
       <meshStandardMaterial color="#17191c" roughness={.72} metalness={.18}/>
     </instancedMesh>
     <instancedMesh ref={lightRef} args={[lightGeo,undefined,maxCars*2]}>
-      <meshStandardMaterial emissive="#ffffff" emissiveIntensity={2.6} toneMapped={false}/>
+      <meshBasicMaterial toneMapped={false}/>
     </instancedMesh>
   </>
 }
@@ -939,9 +940,13 @@ function AGVLoop({
 
   const pathPoints=useMemo(()=>curve.getPoints(100),[curve])
   const pathGeometry=useMemo(()=>new THREE.BufferGeometry().setFromPoints(pathPoints),[pathPoints])
+  const pathMaterial=useMemo(()=>new THREE.LineBasicMaterial({color:'#826c25',transparent:true,opacity:.55}),[])
+  const pathLine=useMemo(()=>new THREE.Line(pathGeometry,pathMaterial),[pathGeometry,pathMaterial])
+
+  useEffect(()=>()=>{pathGeometry.dispose();pathMaterial.dispose()},[pathGeometry,pathMaterial])
 
   return <>
-    <primitive object={new THREE.Line(pathGeometry,new THREE.LineBasicMaterial({color:'#826c25',transparent:true,opacity:.55}))}/>
+    <primitive object={pathLine}/>
     {[0,1,2].map(i=><group key={i} ref={group=>{groups.current[i]=group}}>
       <mesh castShadow>
         <boxGeometry args={[1.05,.32,.72]}/>
