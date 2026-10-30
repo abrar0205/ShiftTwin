@@ -1668,17 +1668,20 @@ function FactoryWorld({
     })}
 
     {(mobile||renderQuality<2)&&<ContactShadows position={[0,.02,0]} opacity={.32} scale={46} blur={2.5} far={12}/>}
-    {!mobile&&!reducedMotion&&<EffectComposer multisampling={0}>
-      {renderQuality>=2&&<N8AO
-        aoRadius={2.2}
-        intensity={1.25}
-        quality="performance"
-        halfRes
-        distanceFalloff={1}
-      />}
-      {renderQuality>=1&&<Bloom intensity={.42} luminanceThreshold={1.08} luminanceSmoothing={.2} mipmapBlur/>}
+    {!mobile&&!reducedMotion&&renderQuality>=2&&<EffectComposer multisampling={0}>
+      <N8AO aoRadius={2.2} intensity={1.25} quality="performance" halfRes distanceFalloff={1}/>
+      <Bloom intensity={.42} luminanceThreshold={1.08} luminanceSmoothing={.2} mipmapBlur/>
       <SMAA/>
       <Vignette eskil={false} offset={.18} darkness={.38}/>
+    </EffectComposer>}
+    {!mobile&&!reducedMotion&&renderQuality===1&&<EffectComposer multisampling={0}>
+      <Bloom intensity={.38} luminanceThreshold={1.1} luminanceSmoothing={.2} mipmapBlur/>
+      <SMAA/>
+      <Vignette eskil={false} offset={.18} darkness={.32}/>
+    </EffectComposer>}
+    {!mobile&&!reducedMotion&&renderQuality===0&&<EffectComposer multisampling={0}>
+      <SMAA/>
+      <Vignette eskil={false} offset={.18} darkness={.28}/>
     </EffectComposer>}
 
     <OrbitControls
