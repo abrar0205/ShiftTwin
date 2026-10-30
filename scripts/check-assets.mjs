@@ -22,6 +22,28 @@ function walk(dir){
   }
 }
 
+function glbJson(file){
+  const data=fs.readFileSync(file)
+  if(data.readUInt32LE(0)!==0x46546c67) throw new Error(`${file} is not a valid GLB`)
+  let offset=12
+  while(offset<data.length){
+    const length=data.readUInt32LE(offset)
+    const type=data.readUInt32LE(offset+4)
+    if(type===0x4e4f534a){
+      return JSON.parse(data.subarray(offset+8,offset+8+length).toString('utf8').replace(/\0+$/g,''))
+    }
+    offset+=8+length
+  }
+  throw new Error(`${file} has no GLB JSON chunk`)
+}
+
+function requireNames(file,property,names){
+  const json=glbJson(file)
+  const available=new Set((json[property]??[]).map(item=>item?.name).filter(Boolean))
+  const missing=names.filter(name=>!available.has(name))
+  if(missing.length) throw new Error(`${file} missing ${property}: ${missing.join(', ')}`)
+}
+
 for(const root of roots) walk(root)
 const total=files.reduce((sum,item)=>sum+item.bytes,0)
 
@@ -34,3 +56,16 @@ if(total>limit){
   console.error('Model asset budget exceeded.')
   process.exit(1)
 }
+
+try{
+  requireNames('public/models/worker.glb','nodes',['root','hips','Rig_Medium'])
+  requireNames('public/models/worker-movement.glb','animations',['Walking_A'])
+  requireNames('public/models/worker-general.glb','animations',['Idle_A','Interact'])
+  requireNames('public/models/sedan.glb','nodes',['body','wheel-front-left','wheel-front-right','wheel-back-left','wheel-back-right'])
+  requireNames('public/models/robot-arm-a.glb','nodes',['element-a','element-b','element-c','element-d','element-e','element-f','claw-a','claw-b'])
+}catch(error){
+  console.error(error instanceof Error?error.message:String(error))
+  process.exit(1)
+}
+
+console.log('GLB manifest check passed: required worker clips and model nodes are present.')
