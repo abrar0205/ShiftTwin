@@ -56,6 +56,14 @@ function useFactoryWorker(lapsed=false,accent=false){
     ()=>filteredClips([...movement.animations,...general.animations],root),
     [movement.animations,general.animations,root],
   )
+
+  useEffect(()=>()=>root.traverse(object=>{
+    const mesh=object as THREE.Mesh
+    if(!mesh.isMesh) return
+    const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material]
+    materials.forEach(material=>material.dispose())
+  }),[root])
+
   return {root,clips}
 }
 

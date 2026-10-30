@@ -1224,7 +1224,9 @@ function RobotArm({
     wrist:joints.wrist?.rotation.clone(),
     tool:joints.tool?.rotation.clone(),
   }),[joints])
+  const outer=useRef<THREE.Group>(null)
   const sparkAnchor=useRef<THREE.Group>(null)
+  const toolPosition=useMemo(()=>new THREE.Vector3(),[])
 
   useFrame(()=>{
     const state=motionRef.current
@@ -1258,16 +1260,15 @@ function RobotArm({
       joints.tool.rotation.y=baseRotations.tool.y+(active?state.time*1.8:0)
     }
 
-    if(sparkAnchor.current){
-      const tool=joints.tool
-      if(tool){
-        tool.updateWorldMatrix(true,false)
-        tool.getWorldPosition(sparkAnchor.current.position)
-      }
+    if(sparkAnchor.current&&outer.current&&joints.tool){
+      joints.tool.updateWorldMatrix(true,false)
+      joints.tool.getWorldPosition(toolPosition)
+      outer.current.worldToLocal(toolPosition)
+      sparkAnchor.current.position.copy(toolPosition)
     }
   })
 
-  return <group position={position} rotation={[0,mirror?Math.PI:0,0]} scale={.64}>
+  return <group ref={outer} position={position} rotation={[0,mirror?Math.PI:0,0]} scale={.64}>
     <primitive object={root}/>
     <group ref={sparkAnchor}>
       <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>

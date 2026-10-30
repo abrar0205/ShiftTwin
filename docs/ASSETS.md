@@ -24,6 +24,16 @@ The imported model carries no employee identity. ShiftTwin shows at most one ful
 
 The sedan is deliberately generic. ShiftTwin adds neutral runtime material treatment and does not use manufacturer names, logos or recognizable branded vehicle styling.
 
+## Industrial robot
+
+- **Visual:** `robot-arm-a.glb` from Kenney Factory Kit
+- **Creator:** Kenney
+- **License:** CC0 1.0
+- **Source path used for the vendored file:** a source-identical Factory Kit copy in `HunterHo07/O1-3d-Assets-1`
+- **File:** `public/models/robot-arm-a.glb`
+
+The model contains a hierarchical base, six arm elements and two claw meshes. ShiftTwin drives those joints from the existing station-work cycle; the imported arm does not play a decorative canned sequence.
+
 ## Environment
 
 The current v1.3 Phase 2 build keeps ShiftTwin's local procedural cube-map environment. A candidate HDR transfer was rejected during integration because the copied blob was incomplete; no broken or externally fetched HDR is shipped.
