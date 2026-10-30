@@ -180,13 +180,32 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       return
     }
 
-    setHudTrial(trial)
-    setSequenceMode('heal')
-    healTimers.current.push(window.setTimeout(() => setHudTrial(healTrial), 1350))
-    healTimers.current.push(window.setTimeout(() => {
-      completePlanApply()
-      setSequenceMode('idle')
-    }, 3350))
+    // Never play the recovery off-screen: the optimizer lives below the factory.
+    // Wait for a real on-screen intersection rather than guessing a scroll duration.
+    const startHeal = () => {
+      setHudTrial(trial)
+      setSequenceMode('heal')
+      healTimers.current.push(window.setTimeout(() => setHudTrial(healTrial), 1350))
+      healTimers.current.push(window.setTimeout(() => {
+        completePlanApply()
+        setSequenceMode('idle')
+      }, 3350))
+    }
+    const floor = container.current
+    if (!floor || typeof IntersectionObserver === 'undefined') {
+      floor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      startHeal()
+      return
+    }
+    const observer = new IntersectionObserver(entries => {
+      if ((entries[0]?.intersectionRatio ?? 0) < 0.6) return
+      observer.disconnect()
+      startHeal()
+    }, { threshold: [0, 0.6, 1] })
+    observer.observe(floor)
+    floor.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // A skip cancels the pending reveal as well as the active animation.
+    healTimers.current.push(window.setTimeout(() => observer.disconnect(), 12000))
   // Sequence inputs are captured when healId changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healId])
