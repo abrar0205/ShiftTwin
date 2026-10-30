@@ -13,10 +13,10 @@ function Worker({position,accent=false,walking=false}:{position:[number,number,n
   })
   const body=accent?palette.accent:'#a8b6c0'
   return <group ref={g} position={position} scale={.72}>
-    <mesh castShadow position={[0,1.2,0]}><capsuleGeometry args={[.23,.75,6,10]}/><meshStandardMaterial color={body} roughness={.55}/></mesh>
+    <mesh castShadow position={[0,1.2,0]}><cylinderGeometry args={[.23,.27,.95,12]}/><meshStandardMaterial color={body} roughness={.55}/></mesh>
     <mesh castShadow position={[0,1.95,0]}><sphereGeometry args={[.28,16,12]}/><meshStandardMaterial color="#c8b8a7" roughness={.7}/></mesh>
     <mesh castShadow position={[0,2.2,0]} scale={[1,.45,1]}><sphereGeometry args={[.31,16,8]}/><meshStandardMaterial color={accent?palette.accent:'#d5aa2d'} roughness={.4}/></mesh>
-    {[-.14,.14].map((x,i)=><mesh key={i} castShadow position={[x,.4,0]}><capsuleGeometry args={[.09,.55,4,8]}/><meshStandardMaterial color="#596772"/></mesh>)}
+    {[-.14,.14].map((x,i)=><mesh key={i} castShadow position={[x,.4,0]}><cylinderGeometry args={[.09,.1,.72,10]}/><meshStandardMaterial color="#596772"/></mesh>)}
   </group>
 }
 
