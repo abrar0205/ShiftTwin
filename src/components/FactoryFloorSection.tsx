@@ -83,6 +83,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
   } = useTwinStore()
 
   const container = useRef<HTMLDivElement>(null)
+  const floorShell = useRef<HTMLDivElement>(null)
   const lastRunHandled = useRef(0)
   const lastHealHandled = useRef(0)
   const lastSkipHandled = useRef(sequenceSkipId)
@@ -191,7 +192,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
         setSequenceMode('idle')
       }, 3350))
     }
-    const floor = container.current
+    const floor = floorShell.current
     if (!floor || typeof IntersectionObserver === 'undefined') {
       floor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       startHeal()
@@ -294,6 +295,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
 
     <div
       className={`factory-shell ${sequenceMode !== 'idle' ? 'sequence-active' : ''}`}
+      ref={floorShell}
       onClick={() => { if (sequenceMode !== 'idle') skipSequence() }}
     >
       <div className="factory-shell-hud factory-operating-hud">
