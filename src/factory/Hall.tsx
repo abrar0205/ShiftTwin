@@ -27,9 +27,5 @@ export function Hall(){
         <meshPhysicalMaterial color={palette.glass} transparent opacity={.16} roughness={.18} transmission={.12} side={THREE.DoubleSide}/>
       </mesh>)}
     </group>)}
-    <mesh position={[0,6.9,0]} rotation={[Math.PI/2,0,0]}>
-      <planeGeometry args={[FLOOR.width,FLOOR.depth]}/>
-      <meshStandardMaterial color="#080c10" roughness={.8} side={THREE.DoubleSide}/>
-    </mesh>
   </group>
 }
