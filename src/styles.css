@@ -793,3 +793,15 @@ footer p { margin: 0; color: var(--text-faint); font-size: 8px; text-align: righ
   .factory-sequence-status > span { display:none; }
   .letterbox i { height:7%; }
 }
+
+
+.credibility-strip { display:grid; grid-template-columns:1fr 1fr 1.45fr; gap:10px; margin-bottom:10px; }
+.credibility-strip .glass-panel { min-height:116px; padding:17px 18px; display:flex; flex-direction:column; }
+.credibility-strip span { color:#71808d; font:700 9px "JetBrains Mono",monospace; letter-spacing:.1em; }
+.credibility-strip strong { margin-top:14px; color:#e7eef3; font-size:28px; letter-spacing:-.035em; font-weight:560; }
+.credibility-strip small { margin-top:4px; color:#81909c; font-size:10px; }
+.uncertainty-track { position:relative; height:5px; margin-top:auto; border-radius:999px; background:rgba(255,255,255,.05); }
+.uncertainty-track i { position:absolute; top:0; bottom:0; border-radius:999px; background:linear-gradient(90deg,rgba(92,200,255,.32),rgba(92,200,255,.78)); }
+.uncertainty-track b { position:absolute; top:-4px; width:2px; height:13px; background:#d9f3ff; box-shadow:0 0 8px rgba(92,200,255,.75); }
+@media (max-width:820px){ .credibility-strip{grid-template-columns:1fr 1fr}.credibility-strip .uncertainty-card{grid-column:1/-1} }
+@media (max-width:520px){ .credibility-strip{grid-template-columns:1fr}.credibility-strip .uncertainty-card{grid-column:auto} }
