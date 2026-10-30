@@ -112,11 +112,11 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
   }, [shift, result])
 
   useEffect(() => {
-    const node = container.current
+    const node = floorShell.current
     if (!node || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver(
       entries => setOnscreen(entries[0]?.isIntersecting ?? true),
-      { rootMargin: '180px 0px', threshold: 0.02 },
+      { rootMargin: '260px 0px', threshold: 0.01 },
     )
     observer.observe(node)
     return () => observer.disconnect()
@@ -198,15 +198,21 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       startHeal()
       return
     }
-    const observer = new IntersectionObserver(entries => {
-      if ((entries[0]?.intersectionRatio ?? 0) < 0.6) return
+    let started = false
+    const beginOnce = () => {
+      if (started) return
+      started = true
       observer.disconnect()
       startHeal()
+    }
+    const observer = new IntersectionObserver(entries => {
+      if ((entries[0]?.intersectionRatio ?? 0) >= 0.6) beginOnce()
     }, { threshold: [0, 0.6, 1] })
     observer.observe(floor)
     floor.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    // A skip cancels the pending reveal as well as the active animation.
-    healTimers.current.push(window.setTimeout(() => observer.disconnect(), 12000))
+    // Visibility thresholds can be unreachable on short screens or during layout changes.
+    // Finish the intervention rather than leaving the optimizer permanently disabled.
+    healTimers.current.push(window.setTimeout(beginOnce, 1800))
   // Sequence inputs are captured when healId changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healId])
@@ -342,7 +348,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
             skipId={sequenceSkipId}
             shift={shift}
             seed={seed}
-            active={onscreen && tabVisible}
+            active={tabVisible && (onscreen || sequenceMode !== 'idle')}
             reducedMotion={reducedMotion}
           />
         </Suspense>
