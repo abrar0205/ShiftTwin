@@ -126,6 +126,16 @@ describe('ShiftTwin simulation', () => {
     expect(sum).toBeCloseTo(result.readiness-baseline.readiness,6)
   })
 
+  it('reports shortfall, station-shift coverage and a 50-batch uncertainty band', () => {
+    const plant=generatePlant(20261029)
+    const result=simulate(plant,PRESETS.holiday,5000)
+    expect(result.expectedShortfall).toBeGreaterThanOrEqual(0)
+    expect(result.stationShiftCoverage).toBeGreaterThanOrEqual(0)
+    expect(result.stationShiftCoverage).toBeLessThanOrEqual(100)
+    expect(result.uncertaintyBand.batches).toBe(50)
+    expect(result.uncertaintyBand.p10).toBeLessThanOrEqual(result.uncertaintyBand.p90)
+  })
+
   it('recommends the highest-scoring verified intervention', () => {
     const plant=generatePlant(20261029)
     const current=simulate(plant,PRESETS.holiday,900)
