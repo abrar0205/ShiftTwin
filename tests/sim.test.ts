@@ -132,6 +132,8 @@ describe('ShiftTwin simulation', () => {
     const { plan }=optimize(plant,PRESETS.holiday,current)
     const best=Math.max(...plan.options.map(x=>x.readinessAfter),plan.recommended.readinessAfter)
     expect(plan.recommended.readinessAfter).toBeCloseTo(best,8)
+    expect(plan.recommended.result.samples).toBe(5000)
+    for (const option of plan.options) expect(option.result.samples).toBe(5000)
     for (const option of plan.options) {
       if (option.id==='training' || option.id==='overtime') {
         expect(option.readinessAfter).toBeGreaterThanOrEqual(option.readinessBefore)

@@ -46,7 +46,17 @@ The headline score is not scripted. It is the Monte Carlo estimate of full criti
 - greedy marginal-gain cross-training optimizer;
 - constrained shift-rebalancing search;
 - eight-week resilience outlook;
-- Vitest checks for determinism, matching and monotonicity.
+- Vitest checks for determinism, matching, monotonicity and line-motion invariants;
+- a lazy-loaded 3D Living Factory whose workers, andons, station dwell, queues and starvation states are tied to representative Monte Carlo trials;
+- skippable scenario and plan-heal sequences that focus the camera on the actual bottleneck without changing the underlying model state.
+
+## Living Factory
+
+The 3D floor is a model view rather than decorative animation. A selected representative trial drives anonymous worker assignments, station deficits and throughput factors. The line uses a deterministic, time-compressed discrete-event model so constrained station dwell creates upstream queues and downstream starvation.
+
+The scenario sequence spotlights the actual bottleneck, while Apply Plan keeps the scenario visible and animates the verified intervention before committing the new state. Plan comparisons use 5,000 verification samples.
+
+No branded vehicle shapes, logos or external runtime assets are used.
 
 ## Signature idea: resilience value of skill
 
@@ -71,14 +81,14 @@ See [docs/METHOD.md](docs/METHOD.md).
 
 ## Stack
 
-React 18 · TypeScript · Vite · Tailwind CSS · Motion · Zustand · custom SVG · D3 math utilities · Web Worker · Vitest · GitHub Pages
+React 18 · TypeScript · Vite · Motion · Zustand · Three.js · React Three Fiber · Drei · D3 math utilities · Web Worker · Vitest · GitHub Pages
 
 The simulation and optimization run entirely in the browser. No backend, database, API key or external service is required for the public demo.
 
 ## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

@@ -45,13 +45,18 @@ Plant readiness is:
 
 The headline score is estimated from 5,000 trials. The interface also reports shift-level coverage probability, station/shift uncover probability, the distribution of uncovered stations and recurring bottlenecks.
 
-## Representative trial
+## Representative trials
 
-For each shift, ShiftTwin records total staffing shortfall in every Monte Carlo trial. It then selects the trial whose shortfall is closest to the median shortfall for that shift. Ties resolve to the earliest trial index.
+For each shift, ShiftTwin records total staffing shortfall in every Monte Carlo trial and exposes two reproducible views:
 
-This is deliberately not the worst case. It is a reproducible typical staffing state for the selected scenario.
+- **Typical trial:** closest to the median shortfall across all trials.
+- **Failing trial:** among trials with shortfall greater than zero, closest to the median shortfall of failing trials.
 
-The representative trial contains:
+The UI also reports the shift failure rate. If failure rate is at least 5%, the factory defaults to the failing view so a materially risky scenario does not render as an all-green floor merely because the overall median shortfall is zero.
+
+These are representative simulation states, not worst-case selections.
+
+Each trial contains:
 - anonymous worker slots and presence state;
 - active and lapsed qualifications;
 - max-flow station assignment;
@@ -72,7 +77,21 @@ The Living Factory uses a deliberately simple bottleneck model:
 
 **cars lost per shift = (target JPH − line rate JPH) × 8 hours**
 
-This is a visualization model for staffing feasibility, not a production-engineering throughput model. It does not model buffers, stochastic cycle time, equipment downtime, rework or line balancing.
+This is a visualization model for staffing feasibility, not a production-engineering throughput model. It does not model stochastic equipment downtime, rework routing or detailed industrial line balancing.
+
+## Living Factory motion and story sequences
+
+The 3D floor uses one deterministic scene clock with 18× visual time compression. Vehicle dwell is derived from station throughput factor; a zero-capacity station holds indefinitely; vehicles advance only when the next slot is free. Upstream queueing and downstream starvation therefore emerge from slot availability rather than scripted animation.
+
+The v1.3 story sequence does not alter simulation outputs:
+
+- RUN SCENARIO scrolls to the floor and stages worker loss, ordered andon changes, queue formation, bottleneck camera focus and HUD counter transitions.
+- The bottleneck remains highlighted with a floor ring, focused light and persistent callout containing the station deficit, throughput factor and simulated failure frequency.
+- Apply Plan keeps the scenario state visible while an accent worker moves into the gap, the bottleneck andon transitions toward the verified plan state, and the queue drains using the plan trial's throughput factors.
+- The optimizer verifies intervention results with 5,000 Monte Carlo samples, matching the scenario basis before the plan state is committed.
+- Sequences can be skipped with click or Escape; reduced-motion mode jumps directly to the end state.
+
+The 12 full station cards were replaced by compact status chips with details on hover/focus. STARVED labels are updated in one batched frame loop, and Three.js color/vector temporaries used in frame loops are preallocated.
 
 ## Intervention comparison
 
@@ -112,7 +131,7 @@ The demo does **not** claim legal compliance.
 
 - synthetic data and simplified production logic;
 - representative trial is selected by median staffing shortfall, not by production loss;
-- the Living Factory Phase 2 line rate is a static bottleneck estimate; queue dynamics are added separately;
+- the headline line-rate metric remains a simplified bottleneck estimate; the animated line is a time-compressed discrete-event visualization of those same station throughput factors;
 - no stochastic demand process beyond the user-selected scenario;
 - renewal rate is a scenario assumption, not an empirical forecast;
 - training quality and worker preference are not modeled;
