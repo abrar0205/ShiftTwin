@@ -315,6 +315,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
             previousTrial={previousTrial}
             healTrial={healTrial}
             failureRate={failurePct}
+            healWeek={plan?.recommended.evaluationWeek ?? null}
             runId={runId}
             healId={healId}
             skipId={sequenceSkipId}
