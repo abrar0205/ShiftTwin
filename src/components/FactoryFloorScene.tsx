@@ -324,14 +324,43 @@ function AreaZone({ x, label, night }: { x: number; label: string; night: boolea
   </group>
 }
 
+function resolveAndonTone(
+  finalTone: Tone,
+  stationIndex: number,
+  bottleneck: boolean,
+  healState: TrialStationState | null,
+  sequence: SceneSequence,
+): Tone {
+  if (sequence.kind === 'run') {
+    const revealAt = .20 + stationIndex * .018
+    if (sequence.progress < revealAt) return 'ready'
+  }
+
+  if (sequence.kind === 'heal' && bottleneck) {
+    if (sequence.progress < .40) return finalTone
+    if (sequence.progress < .64) return 'watch'
+    return healState ? toneForStation(healState) : finalTone
+  }
+
+  return finalTone
+}
+
 function AndonBeacon({
   tone,
   redLight,
   motionRef,
+  sequenceRef,
+  stationIndex,
+  bottleneck,
+  healState,
 }: {
   tone: Tone
   redLight: boolean
   motionRef: MotionRef
+  sequenceRef: SequenceRef
+  stationIndex: number
+  bottleneck: boolean
+  healState: TrialStationState | null
 }) {
   const lamp = useRef<THREE.MeshStandardMaterial>(null)
   const rotor = useRef<THREE.Group>(null)
@@ -339,21 +368,30 @@ function AndonBeacon({
 
   useFrame(() => {
     const t = motionRef.current.time
+    const visualTone = resolveAndonTone(tone,stationIndex,bottleneck,healState,sequenceRef.current)
+    const color = STATUS[visualTone].color
+
     if (lamp.current) {
-      lamp.current.emissiveIntensity = tone === 'ready'
+      lamp.current.color.set(color)
+      lamp.current.emissive.set(color)
+      lamp.current.emissiveIntensity = visualTone === 'ready'
         ? 3.2
-        : tone === 'watch'
+        : visualTone === 'watch'
           ? 2.2 + (Math.sin(t * 2.3) + 1) * 1.15
           : 4.8 + (Math.sin(t * 7.5) + 1) * .55
     }
-    if (rotor.current) rotor.current.rotation.y = t * 5.8
-    if (floorLight.current) floorLight.current.intensity = tone === 'risk'
+    if (rotor.current) {
+      rotor.current.visible = visualTone === 'risk'
+      rotor.current.rotation.y = t * 5.8
+    }
+    if (floorLight.current) floorLight.current.intensity = visualTone === 'risk'
       ? 1.0 + (Math.sin(t * 6.5) + 1) * .45
       : 0
   })
 
   const color = STATUS[tone].color
-  return <group>
+  const scale = bottleneck ? 1.55 : 1
+  return <group scale={scale}>
     <mesh castShadow>
       <sphereGeometry args={[.13,14,10]}/>
       <meshStandardMaterial
@@ -364,35 +402,48 @@ function AndonBeacon({
         toneMapped={false}
       />
     </mesh>
-    {tone === 'risk' && <group ref={rotor}>
+    <group ref={rotor} visible={tone === 'risk'}>
       <mesh position={[0,0,.19]} rotation={[Math.PI/2,0,0]}>
         <coneGeometry args={[.11,.42,12,1,true]}/>
         <meshBasicMaterial color="#ff4e4e" transparent opacity={.16} side={THREE.DoubleSide} depthWrite={false}/>
       </mesh>
-    </group>}
+    </group>
     {redLight && <pointLight ref={floorLight} position={[0,-1.9,0]} color="#ff3f3f" distance={3.2} decay={2} intensity={1.1}/>}
   </group>
 }
 
-function StarvedChip({
-  stationIndex,
+function StarvationLayer({
+  xs,
   motionRef,
   trial,
 }: {
-  stationIndex: number
+  xs: number[]
   motionRef: MotionRef
   trial: RepresentativeTrial
 }) {
-  const ref = useRef<HTMLDivElement>(null)
+  const refs = useRef<Array<HTMLDivElement | null>>([])
+
   useFrame(() => {
-    if (!ref.current) return
-    const visible = stationIsStarved(motionRef.current,trial,stationIndex)
-    ref.current.style.opacity = visible ? '1' : '0'
-    ref.current.style.transform = visible ? 'translateY(0)' : 'translateY(4px)'
+    for (let index=0; index<refs.current.length; index++) {
+      const node = refs.current[index]
+      if (!node) continue
+      const visible = stationIsStarved(motionRef.current,trial,index)
+      node.style.opacity = visible ? '1' : '0'
+      node.style.transform = visible ? 'translateY(0)' : 'translateY(4px)'
+    }
   })
-  return <Html position={[0,2.15,.2]} center distanceFactor={12} occlude={false}>
-    <div ref={ref} className="factory-starved-chip">STARVED</div>
-  </Html>
+
+  return <>
+    {trial.stations.map((station,index)=><Html
+      key={station.stationId}
+      position={[xs[index],1.78,.45]}
+      center
+      distanceFactor={12}
+      occlude={false}
+    >
+      <div ref={node=>{refs.current[index]=node}} className="factory-starved-chip">STARVED</div>
+    </Html>)}
+  </>
 }
 
 function Workcell({
@@ -404,6 +455,9 @@ function Workcell({
   redLight,
   motionRef,
   trial,
+  sequenceRef,
+  bottleneck,
+  healState,
 }: {
   station: Station
   stationIndex: number
@@ -413,6 +467,9 @@ function Workcell({
   redLight: boolean
   motionRef: MotionRef
   trial: RepresentativeTrial
+  sequenceRef: SequenceRef
+  bottleneck: boolean
+  healState: TrialStationState | null
 }) {
   const tone = toneForStation(state)
   const meta = STATUS[tone]
@@ -421,14 +478,14 @@ function Workcell({
   useFrame(() => {
     if (!baseMaterial.current) return
     const starved = stationIsStarved(motionRef.current,trial,stationIndex)
-    const target = new THREE.Color(starved ? '#080b0e' : tone === 'risk' ? '#171214' : tone === 'watch' ? '#171611' : '#10161a')
+    const target = starved ? COLOR_CACHE.cell.starved : COLOR_CACHE.cell[tone]
     baseMaterial.current.color.lerp(target,.12)
   })
 
   return <group position={[x,0,0]}>
     <mesh position={[0,.055,0]} receiveShadow>
       <boxGeometry args={[2.45,.08,5.35]}/>
-      <meshStandardMaterial ref={baseMaterial} color={tone === 'risk' ? '#171214' : tone === 'watch' ? '#171611' : '#10161a'} roughness={.8}/>
+      <meshStandardMaterial ref={baseMaterial} color={COLOR_CACHE.cell[tone]} roughness={.8}/>
     </mesh>
 
     <mesh position={[0,.08,2.25]}>
@@ -441,20 +498,105 @@ function Workcell({
       <meshStandardMaterial color="#6f7b86" roughness={.48} metalness={.55}/>
     </mesh>
     <group position={[.88,2.3,-1.95]}>
-      <AndonBeacon tone={tone} redLight={redLight} motionRef={motionRef}/>
+      <AndonBeacon
+        tone={tone}
+        redLight={redLight}
+        motionRef={motionRef}
+        sequenceRef={sequenceRef}
+        stationIndex={stationIndex}
+        bottleneck={bottleneck}
+        healState={healState}
+      />
     </group>
 
-    <StarvedChip stationIndex={stationIndex} motionRef={motionRef} trial={trial}/>
-
-    <Html position={[0,2.78,-1.95]} center distanceFactor={12} occlude={false}>
-      <div className={`factory-cell-label ${tone}`}>
-        <strong>{station.name}</strong>
-        <span>{state.assigned}/{state.required} assigned · {(state.throughputFactor*100).toFixed(0)}%</span>
-        <small>{meta.label} · aggregate fail risk {aggregateRisk.toFixed(1)}%</small>
-        {state.lapsedPresentWorkerSlots.length > 0 && <small className="cert-lapsed-label">cert lapsed candidate present</small>}
+    <Html position={[0,2.62,-1.95]} center distanceFactor={12} occlude={false}>
+      <div className={`factory-cell-chip ${tone} ${bottleneck ? 'bottleneck' : ''}`} tabIndex={0}>
+        <i/>
+        <b>{String(stationIndex+1).padStart(2,'0')}</b>
+        <div className="factory-cell-detail">
+          <strong>{station.name}</strong>
+          <span>{state.assigned}/{state.required} assigned · {(state.throughputFactor*100).toFixed(0)}% throughput</span>
+          <small>{meta.label} · aggregate fail risk {aggregateRisk.toFixed(1)}%</small>
+          {state.lapsedPresentWorkerSlots.length > 0 && <small className="cert-lapsed-label">cert lapsed candidate present</small>}
+        </div>
       </div>
     </Html>
   </group>
+}
+
+function BottleneckSpotlight({
+  x,
+  station,
+  shift,
+  failureRate,
+  sequenceRef,
+  motionRef,
+  healState,
+}: {
+  x: number
+  station: TrialStationState
+  shift: Shift
+  failureRate: number
+  sequenceRef: SequenceRef
+  motionRef: MotionRef
+  healState: TrialStationState | null
+}) {
+  const ring = useRef<THREE.Mesh>(null)
+  const ringMaterial = useRef<THREE.MeshBasicMaterial>(null)
+  const callout = useRef<HTMLDivElement>(null)
+  const target = useMemo(() => {
+    const object = new THREE.Object3D()
+    object.position.set(x,.15,0)
+    return object
+  },[x])
+
+  useFrame(() => {
+    const time = motionRef.current.time
+    const seq = sequenceRef.current
+    const pulse = .96 + (Math.sin(time*3.2)+1)*.055
+
+    if (ring.current) ring.current.scale.setScalar(pulse)
+    if (ringMaterial.current) ringMaterial.current.opacity=.26+(Math.sin(time*3.2)+1)*.09
+
+    if (callout.current) {
+      const reveal = seq.kind === 'run' && seq.active ? seq.progress >= .73 : true
+      callout.current.style.opacity = reveal ? '1' : '0'
+      callout.current.style.transform = reveal ? 'translateY(0)' : 'translateY(8px)'
+    }
+  })
+
+  const linePct = Math.round(station.throughputFactor*100)
+  const shortText = `${station.deficit} qualified ${station.deficit === 1 ? 'person' : 'people'} short`
+  const occurrence = shift === 'Night'
+    ? `happens on ${failureRate.toFixed(0)}% of nights`
+    : `happens on ${failureRate.toFixed(0)}% of ${shift.toLowerCase()} shifts`
+  const healed = healState && healState.deficit < station.deficit
+
+  return <>
+    <primitive object={target}/>
+    <spotLight
+      position={[x+1.5,7.5,4.2]}
+      target={target}
+      angle={.28}
+      penumbra={.68}
+      distance={14}
+      intensity={3.4}
+      color="#f7ddb0"
+      castShadow
+    />
+    <mesh ref={ring} position={[x,.075,0]} rotation={[-Math.PI/2,0,0]}>
+      <ringGeometry args={[1.0,1.28,64]}/>
+      <meshBasicMaterial ref={ringMaterial} color="#f5b841" transparent opacity={.32} depthWrite={false}/>
+    </mesh>
+    <Html position={[x,3.35,1.45]} center distanceFactor={10.5} occlude={false}>
+      <div ref={callout} className="bottleneck-callout">
+        <span>BOTTLENECK</span>
+        <strong>{station.stationName} · {shift}</strong>
+        <p>{shortText} · line at {linePct}% · {occurrence}</p>
+        {healed && <small>Verified plan restores this cell to {Math.round((healState?.throughputFactor ?? 1)*100)}% capacity.</small>}
+      </div>
+    </Html>
+  </>
 }
 
 function makeBeltTexture() {
