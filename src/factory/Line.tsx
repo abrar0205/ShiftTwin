@@ -46,7 +46,7 @@ export function Line({trial,focusIndex,healing}:{trial:RepresentativeTrial;focus
         </mesh>
         <mesh position={[0,.105,0]} rotation={[-Math.PI/2,0,0]}>
           <ringGeometry args={[1.42,1.52,40]}/>
-          <meshBasicMaterial color={tone} transparent opacity={i===focusIndex?.9:.18} toneMapped={false}/>
+          <meshBasicMaterial color={tone} transparent opacity={i===focusIndex ? .9 : .18} toneMapped={false}/>
         </mesh>
         {i===focusIndex&&<pointLight position={[0,2.8,0]} color={healing?palette.ready:tone} intensity={healing?18:12} distance={5.2}/>}
         <Andon position={[0,0,0]} status={state.status} focus={i===focusIndex}/>
