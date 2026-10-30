@@ -117,7 +117,12 @@ export function requirementFor(station: Station, scenario: Scenario) {
 
 export function isPresent(plant: Plant, worker: WorkerRecord, sample: number, workerIndex: number, scenario: Scenario) {
   const p = clamp((scenario.absenceRate / 100) * worker.absenceFactor, 0.003, 0.45)
-  return hash01(plant.seed + 4049, sample, workerIndex, scenario.week) >= p
+  const normallyPresent = hash01(plant.seed + 4049, sample, workerIndex, scenario.week) >= p
+  if (!normallyPresent) return false
+  if (worker.holdoverFraction == null) return true
+  // Holdovers model a worker extending into an adjacent shift for at most 2 h
+  // of an 8 h shift: 25% of station-shift exposure, never a full extra worker.
+  return hash01(plant.seed + 9409, sample, workerIndex, scenario.week) < worker.holdoverFraction
 }
 
 export interface CoverageResult {
