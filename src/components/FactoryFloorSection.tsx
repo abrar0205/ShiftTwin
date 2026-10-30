@@ -118,7 +118,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       <SectionHeading
         eyebrow="THE FLOOR, RIGHT NOW"
         title="One real simulated shift, rendered as a factory."
-        body="This view uses a representative Monte Carlo trial closest to the median staffing shortfall. Worker positions, andons and throughput are model outputs—not decorative states."
+        body="This view renders one real Monte Carlo staffing state as a time-compressed production line. Worker positions, andons, station dwell and queue behavior all trace back to the selected trial."
       />
       <div className="factory-control-stack">
         <div className="shift-selector" role="group" aria-label="Factory lighting shift">
@@ -186,7 +186,7 @@ export function FactoryFloorSection({ result, reducedMotion }: { result: SimResu
       <span><b className="ready"/> fully staffed</span>
       <span><b className="watch"/> short by 1</span>
       <span><b className="risk"/> short by 2+</span>
-      <p>Simplified bottleneck model: line rate = demand-adjusted target JPH × the weakest station throughput factor. Cars remain static until Phase 3 queue dynamics.</p>
+      <p>Motion is time-compressed 18× for legibility. Station dwell scales with model throughput, zero-capacity cells hold indefinitely, and queue/starvation behavior emerges from slot availability.</p>
     </div>
   </section>
 }
