@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState, type ElementRef, type MutableRefObject } from 'react'
 import { Canvas, createPortal, useFrame, useThree } from '@react-three/fiber'
 import { ContactShadows, Html, MeshReflectorMaterial, OrbitControls, PerformanceMonitor, useGLTF } from '@react-three/drei'
-import { Bloom, EffectComposer, N8AO, SMAA, Vignette } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import { generatePlant } from '../sim/plant'
 import { HealWorkerModel, StationWorkerModel } from './FactoryWorkerModel'
+
+const FactoryPostEffects=lazy(()=>import('./FactoryPostEffects'))
 import {
   advanceLineMotion,
   CAR_MOVE_SECONDS,
@@ -1668,21 +1669,9 @@ function FactoryWorld({
     })}
 
     {(mobile||renderQuality<2)&&<ContactShadows position={[0,.02,0]} opacity={.32} scale={46} blur={2.5} far={12}/>}
-    {!mobile&&!reducedMotion&&renderQuality>=2&&<EffectComposer multisampling={0}>
-      <N8AO aoRadius={2.2} intensity={1.25} quality="performance" halfRes distanceFalloff={1}/>
-      <Bloom intensity={.42} luminanceThreshold={1.08} luminanceSmoothing={.2} mipmapBlur/>
-      <SMAA/>
-      <Vignette eskil={false} offset={.18} darkness={.38}/>
-    </EffectComposer>}
-    {!mobile&&!reducedMotion&&renderQuality===1&&<EffectComposer multisampling={0}>
-      <Bloom intensity={.38} luminanceThreshold={1.1} luminanceSmoothing={.2} mipmapBlur/>
-      <SMAA/>
-      <Vignette eskil={false} offset={.18} darkness={.32}/>
-    </EffectComposer>}
-    {!mobile&&!reducedMotion&&renderQuality===0&&<EffectComposer multisampling={0}>
-      <SMAA/>
-      <Vignette eskil={false} offset={.18} darkness={.28}/>
-    </EffectComposer>}
+    {!mobile&&!reducedMotion&&<Suspense fallback={null}>
+      <FactoryPostEffects quality={renderQuality}/>
+    </Suspense>}
 
     <OrbitControls
       ref={controlsRef}
