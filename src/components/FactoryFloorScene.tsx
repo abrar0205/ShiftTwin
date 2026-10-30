@@ -1752,7 +1752,7 @@ export default function FactoryFloorScene({
     className="factory-canvas"
     shadows
     dpr={[1,1.5]}
-    frameloop={!active?'never':reducedMotion?'demand':'always'}
+    frameloop={!active?'demand':reducedMotion?'demand':'always'}
     camera={{position:[24,18,24],fov:typeof window!=='undefined' && window.matchMedia('(max-width: 820px)').matches ? 42 : 30,near:.1,far:100}}
     gl={{antialias:true,powerPreference:'high-performance'}}
     onCreated={({gl})=>{
