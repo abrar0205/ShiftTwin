@@ -27,6 +27,7 @@ const STATUS = {
 const PAINTS = ['#4f555b','#d9d9d3','#1d3850','#a7adb1']
 const BODY_IN_WHITE = '#c3c8cb'
 const MOBILE_QUERY = '(max-width: 820px)'
+const CAR_URL = `${import.meta.env.BASE_URL}models/sedan.glb`
 
 type Tone = keyof typeof STATUS
 type MotionRef = MutableRefObject<LineMotionState>
@@ -905,6 +906,59 @@ function renderSlotX(xs: number[], state: LineMotionState, slot: number) {
   return THREE.MathUtils.lerp(base,target,Math.min(1,compression))
 }
 
+interface CarVisual {
+  root: THREE.Object3D
+  body: THREE.Mesh | null
+  bodyMaterial: THREE.MeshPhysicalMaterial | null
+  bodyMap: THREE.Texture | null
+  wheels: Array<{object:THREE.Object3D;baseRotation:THREE.Euler}>
+}
+
+function createCarVisual(source:THREE.Object3D):CarVisual{
+  const root=source.clone(true)
+  const wheels:Array<{object:THREE.Object3D;baseRotation:THREE.Euler}>=[]
+  let body:THREE.Mesh|null=null
+  let bodyMaterial:THREE.MeshPhysicalMaterial|null=null
+  let bodyMap:THREE.Texture|null=null
+
+  root.traverse(object=>{
+    const mesh=object as THREE.Mesh
+    if(!mesh.isMesh) return
+    mesh.castShadow=true
+    mesh.receiveShadow=true
+
+    if(mesh.name==='body'){
+      body=mesh
+      const sourceMaterial=Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+      if(sourceMaterial instanceof THREE.MeshStandardMaterial) bodyMap=sourceMaterial.map
+      bodyMaterial=new THREE.MeshPhysicalMaterial({
+        color:BODY_IN_WHITE,
+        map:null,
+        metalness:.42,
+        roughness:.31,
+        clearcoat:.08,
+        clearcoatRoughness:.22,
+      })
+      mesh.material=bodyMaterial
+    }else if(mesh.name.startsWith('wheel-')){
+      const sourceMaterial=Array.isArray(mesh.material) ? mesh.material[0] : mesh.material
+      const map=sourceMaterial instanceof THREE.MeshStandardMaterial ? sourceMaterial.map : null
+      mesh.material=new THREE.MeshStandardMaterial({
+        color:'#202428',
+        map,
+        metalness:.22,
+        roughness:.68,
+      })
+      wheels.push({object:mesh,baseRotation:mesh.rotation.clone()})
+    }
+  })
+
+  root.rotation.y=Math.PI/2
+  root.scale.setScalar(.72)
+  root.visible=false
+  return {root,body,bodyMaterial,bodyMap,wheels}
+}
+
 function CarFleet({
   xs,
   motionRef,
@@ -912,152 +966,82 @@ function CarFleet({
   xs: number[]
   motionRef: MotionRef
 }) {
+  const source=useGLTF(CAR_URL)
   const maxCars=12
-  const bodyRef=useRef<THREE.InstancedMesh>(null)
-  const cabinRef=useRef<THREE.InstancedMesh>(null)
-  const glassRef=useRef<THREE.InstancedMesh>(null)
-  const wheelRef=useRef<THREE.InstancedMesh>(null)
-  const lightRef=useRef<THREE.InstancedMesh>(null)
-  const bodyGeo=useMemo(()=>new RoundedBoxGeometry(1.72,.38,.88,3,.11),[])
-  const cabinGeo=useMemo(()=>new RoundedBoxGeometry(.92,.34,.74,3,.08),[])
-  const glassGeo=useMemo(()=>new RoundedBoxGeometry(.72,.22,.755,2,.055),[])
-  const wheelGeo=useMemo(()=>new THREE.CylinderGeometry(.19,.19,.12,12),[])
-  const lightGeo=useMemo(()=>new RoundedBoxGeometry(.06,.09,.56,2,.025),[])
-  const temp=useMemo(()=>new THREE.Object3D(),[])
-  const color=useMemo(()=>new THREE.Color(),[])
+  const visuals=useMemo(
+    ()=>Array.from({length:maxCars},()=>createCarVisual(source.scene)),
+    [source.scene],
+  )
 
-  useEffect(()=>()=>{bodyGeo.dispose();cabinGeo.dispose();glassGeo.dispose();wheelGeo.dispose();lightGeo.dispose()},[bodyGeo,cabinGeo,glassGeo,wheelGeo,lightGeo])
-
-  const hide=(mesh:THREE.InstancedMesh,index:number)=>{
-    temp.position.set(0,-50,0)
-    temp.rotation.set(0,0,0)
-    temp.scale.set(0,0,0)
-    temp.updateMatrix()
-    mesh.setMatrixAt(index,temp.matrix)
-  }
+  useEffect(()=>()=>{
+    for(const visual of visuals){
+      visual.bodyMaterial?.dispose()
+      for(const wheel of visual.wheels){
+        const mesh=wheel.object as THREE.Mesh
+        const materials=Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        materials.forEach(material=>material.dispose())
+      }
+    }
+  },[visuals])
 
   useFrame(()=>{
     const state=motionRef.current
-    const cars=[...state.cars.values()].sort((a,b)=>a.id-b.id).slice(0,maxCars)
+    let visualIndex=0
 
-    for(let i=0;i<maxCars;i++){
-      const body=bodyRef.current
-      const cabin=cabinRef.current
-      const glass=glassRef.current
-      if(!body||!cabin||!glass) continue
-      const car=cars[i]
-      if(!car){
-        hide(body,i);hide(cabin,i);hide(glass,i)
-        continue
-      }
-
+    for(const car of state.cars.values()){
+      if(visualIndex>=maxCars) break
+      const visual=visuals[visualIndex++]
       const p=easeInOutCubic(carMoveProgress(car,state.time))
       const fromX=renderSlotX(xs,state,car.fromSlot)
       const toX=renderSlotX(xs,state,car.slot)
       const x=THREE.MathUtils.lerp(fromX,toX,p)
       const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-      const bodyColor=stage<2?BODY_IN_WHITE:PAINTS[car.id%PAINTS.length]
-      const bounce=car.moving?Math.sin(p*Math.PI)*.025:0
+      const bounce=car.moving?Math.sin(p*Math.PI)*.022:0
 
-      temp.position.set(x,1.02+bounce,0)
-      temp.rotation.set(0,0,0)
-      temp.scale.set(1,1,1)
-      temp.updateMatrix()
-      body.setMatrixAt(i,temp.matrix)
-      body.setColorAt(i,color.set(bodyColor))
+      visual.root.visible=true
+      visual.root.position.set(x,.575+bounce,0)
 
-      temp.position.set(x-.08,1.33+bounce,0)
-      temp.scale.set(1,1,1)
-      temp.updateMatrix()
-      cabin.setMatrixAt(i,temp.matrix)
-      cabin.setColorAt(i,color.set(bodyColor))
-
-      if(stage>=4){
-        temp.position.set(x-.08,1.35+bounce,0)
-        temp.scale.set(1,1,1)
-        temp.updateMatrix()
-        glass.setMatrixAt(i,temp.matrix)
-      }else hide(glass,i)
-    }
-
-    if(bodyRef.current){
-      bodyRef.current.instanceMatrix.needsUpdate=true
-      if(bodyRef.current.instanceColor) bodyRef.current.instanceColor.needsUpdate=true
-    }
-    if(cabinRef.current){
-      cabinRef.current.instanceMatrix.needsUpdate=true
-      if(cabinRef.current.instanceColor) cabinRef.current.instanceColor.needsUpdate=true
-    }
-    if(glassRef.current) glassRef.current.instanceMatrix.needsUpdate=true
-
-    const wheels=wheelRef.current
-    if(wheels){
-      let wi=0
-      for(const car of cars){
-        const p=easeInOutCubic(carMoveProgress(car,state.time))
-        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
-        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-        const spin=car.moving ? -(state.time-car.moveStart)*5.5 : 0
-        for(const dx of [-.55,.55]){
-          for(const dz of [-.48,.48]){
-            if(stage>=7){
-              temp.position.set(x+dx,1.0,dz)
-              temp.rotation.set(Math.PI/2,0,spin)
-              temp.scale.set(1,1,1)
-              temp.updateMatrix()
-              wheels.setMatrixAt(wi,temp.matrix)
-            }else hide(wheels,wi)
-            wi++
+      if(visual.bodyMaterial){
+        if(stage<2){
+          if(visual.bodyMaterial.map){
+            visual.bodyMaterial.map=null
+            visual.bodyMaterial.needsUpdate=true
           }
+          visual.bodyMaterial.color.set(BODY_IN_WHITE)
+          visual.bodyMaterial.metalness=.18
+          visual.bodyMaterial.roughness=.40
+          visual.bodyMaterial.clearcoat=.04
+        }else{
+          if(visual.bodyMaterial.map!==visual.bodyMap){
+            visual.bodyMaterial.map=visual.bodyMap
+            visual.bodyMaterial.needsUpdate=true
+          }
+          visual.bodyMaterial.color.set(PAINTS[car.id%PAINTS.length])
+          visual.bodyMaterial.metalness=.42
+          visual.bodyMaterial.roughness=stage>=4?.24:.32
+          visual.bodyMaterial.clearcoat=stage>=4?1:.22
+          visual.bodyMaterial.clearcoatRoughness=stage>=4?.12:.24
         }
       }
-      while(wi<maxCars*4) hide(wheels,wi++)
-      wheels.instanceMatrix.needsUpdate=true
+
+      const spin=car.moving ? -(state.time-car.moveStart)*5.5 : 0
+      for(const wheel of visual.wheels){
+        wheel.object.visible=stage>=7
+        wheel.object.rotation.set(
+          wheel.baseRotation.x+spin,
+          wheel.baseRotation.y,
+          wheel.baseRotation.z,
+        )
+      }
     }
 
-    const lights=lightRef.current
-    if(lights){
-      let li=0
-      for(const car of cars){
-        const p=easeInOutCubic(carMoveProgress(car,state.time))
-        const x=THREE.MathUtils.lerp(renderSlotX(xs,state,car.fromSlot),renderSlotX(xs,state,car.slot),p)
-        const stage=Math.max(0,Math.min(xs.length-1,car.slot))
-        for(const end of [-1,1]){
-          if(stage>=8){
-            temp.position.set(x+end*.86,1.05,0)
-            temp.rotation.set(0,0,0)
-            temp.scale.set(1,1,1)
-            temp.updateMatrix()
-            lights.setMatrixAt(li,temp.matrix)
-            lights.setColorAt(li,color.set(end>0?'#dff4ff':'#ff5d5d'))
-          }else hide(lights,li)
-          li++
-        }
-      }
-      while(li<maxCars*2) hide(lights,li++)
-      lights.instanceMatrix.needsUpdate=true
-      if(lights.instanceColor) lights.instanceColor.needsUpdate=true
-    }
+    while(visualIndex<maxCars) visuals[visualIndex++].root.visible=false
   })
 
-  return <>
-    <instancedMesh ref={bodyRef} args={[bodyGeo,undefined,maxCars]} castShadow receiveShadow>
-      <meshStandardMaterial roughness={.32} metalness={.68}/>
-    </instancedMesh>
-    <instancedMesh ref={cabinRef} args={[cabinGeo,undefined,maxCars]} castShadow>
-      <meshStandardMaterial roughness={.34} metalness={.62}/>
-    </instancedMesh>
-    <instancedMesh ref={glassRef} args={[glassGeo,undefined,maxCars]} castShadow>
-      <meshPhysicalMaterial color="#172531" roughness={.16} metalness={.06} transmission={.05}/>
-    </instancedMesh>
-    <instancedMesh ref={wheelRef} args={[wheelGeo,undefined,maxCars*4]} castShadow>
-      <meshStandardMaterial color="#17191c" roughness={.72} metalness={.18}/>
-    </instancedMesh>
-    <instancedMesh ref={lightRef} args={[lightGeo,undefined,maxCars*2]}>
-      <meshBasicMaterial toneMapped={false}/>
-    </instancedMesh>
-  </>
+  return <>{visuals.map((visual,index)=><primitive key={index} object={visual.root}/>)}</>
 }
+
+useGLTF.preload(CAR_URL)
 
 function WeldSparks({
   motionRef,
