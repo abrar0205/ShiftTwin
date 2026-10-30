@@ -29,6 +29,7 @@ const PAINTS = ['#4f555b','#d9d9d3','#1d3850','#a7adb1']
 const BODY_IN_WHITE = '#c3c8cb'
 const MOBILE_QUERY = '(max-width: 820px)'
 const CAR_URL = `${import.meta.env.BASE_URL}models/sedan.glb`
+const ROBOT_URL = `${import.meta.env.BASE_URL}models/robot-arm-a.glb`
 
 type Tone = keyof typeof STATUS
 type MotionRef = MutableRefObject<LineMotionState>
@@ -1187,71 +1188,94 @@ function RobotArm({
   sparksDisabled?:boolean
   phaseOffset?:number
 }) {
-  const shoulder=useRef<THREE.Group>(null)
-  const elbow=useRef<THREE.Group>(null)
-  const wrist=useRef<THREE.Group>(null)
+  const source=useGLTF(ROBOT_URL)
+  const root=useMemo(()=>{
+    const clone=source.scene.clone(true)
+    clone.traverse(object=>{
+      const mesh=object as THREE.Mesh
+      if(!mesh.isMesh) return
+      mesh.castShadow=true
+      mesh.receiveShadow=true
+      const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material]
+      const next=materials.map(material=>{
+        const cloned=material.clone()
+        if(cloned instanceof THREE.MeshStandardMaterial){
+          cloned.roughness=.42
+          cloned.metalness=.28
+        }
+        return cloned
+      })
+      mesh.material=Array.isArray(mesh.material)?next:next[0]
+    })
+    return clone
+  },[source.scene])
+
+  const joints=useMemo(()=>({
+    base:root.getObjectByName('element-a'),
+    shoulder:root.getObjectByName('element-b'),
+    elbow:root.getObjectByName('element-c'),
+    wrist:root.getObjectByName('element-e'),
+    tool:root.getObjectByName('element-f'),
+  }),[root])
+  const baseRotations=useMemo(()=>({
+    base:joints.base?.rotation.clone(),
+    shoulder:joints.shoulder?.rotation.clone(),
+    elbow:joints.elbow?.rotation.clone(),
+    wrist:joints.wrist?.rotation.clone(),
+    tool:joints.tool?.rotation.clone(),
+  }),[joints])
+  const sparkAnchor=useRef<THREE.Group>(null)
 
   useFrame(()=>{
     const state=motionRef.current
     const car=carAtStation(state,stationIndex)
     const staffed=trial.stations[stationIndex]?.deficit===0
-    const active=staffed && Boolean(car && !car.moving)
+    const active=staffed&&Boolean(car&&!car.moving)
     const sign=mirror?-1:1
 
-    if(!shoulder.current||!elbow.current||!wrist.current) return
-    if(!active){
-      shoulder.current.rotation.z=THREE.MathUtils.lerp(shoulder.current.rotation.z,sign*.18,.08)
-      elbow.current.rotation.z=THREE.MathUtils.lerp(elbow.current.rotation.z,-sign*.38,.08)
-      wrist.current.rotation.z=THREE.MathUtils.lerp(wrist.current.rotation.z,sign*.16,.08)
-      return
+    const dwell=car?Math.max(.1,(car.readyAt-car.arrivedAt)):.1
+    const phase=active&&car
+      ? Number.isFinite(dwell)
+        ? Math.max(0,Math.min(1,(state.time-car.arrivedAt)/dwell))
+        : 0
+      : 0
+    const reach=active?Math.sin(Math.min(1,phase*2)*Math.PI/2):0
+    const weld=active?Math.sin((phase*5+phaseOffset)*Math.PI*2):0
+
+    if(joints.base&&baseRotations.base){
+      joints.base.rotation.y=baseRotations.base.y+sign*(active?.18*Math.sin(phase*Math.PI*2):.04)
+    }
+    if(joints.shoulder&&baseRotations.shoulder){
+      joints.shoulder.rotation.z=baseRotations.shoulder.z+sign*(.16-.42*reach+.055*weld)
+    }
+    if(joints.elbow&&baseRotations.elbow){
+      joints.elbow.rotation.z=baseRotations.elbow.z-sign*(.28+.48*reach-.06*weld)
+    }
+    if(joints.wrist&&baseRotations.wrist){
+      joints.wrist.rotation.z=baseRotations.wrist.z+sign*(.12+.20*reach+.10*weld)
+    }
+    if(joints.tool&&baseRotations.tool){
+      joints.tool.rotation.y=baseRotations.tool.y+(active?state.time*1.8:0)
     }
 
-    const dwell=Math.max(.1,(car!.readyAt-car!.arrivedAt))
-    const phase=Number.isFinite(dwell)
-      ? Math.max(0,Math.min(1,(state.time-car!.arrivedAt)/dwell))
-      : 0
-    const weld=Math.sin((phase*5+phaseOffset)*Math.PI*2)
-    const reach=Math.sin(Math.min(1,phase*2)*Math.PI/2)
-
-    shoulder.current.rotation.z=sign*(.18-.48*reach+.07*weld)
-    elbow.current.rotation.z=-sign*(.38+.55*reach-.08*weld)
-    wrist.current.rotation.z=sign*(.16+.24*reach+.12*Math.sin((phase*6+phaseOffset)*Math.PI*2))
+    if(sparkAnchor.current){
+      const tool=joints.tool
+      if(tool){
+        tool.updateWorldMatrix(true,false)
+        tool.getWorldPosition(sparkAnchor.current.position)
+      }
+    }
   })
 
-  return <group position={position} rotation={[0,mirror?Math.PI:0,0]}>
-    <mesh position={[0,.14,0]} castShadow>
-      <cylinderGeometry args={[.26,.31,.28,12]}/>
-      <meshStandardMaterial color="#b8942f" roughness={.48} metalness={.38}/>
-    </mesh>
-    <group ref={shoulder} position={[0,.34,0]}>
-      <mesh position={[0,.45,0]} castShadow>
-        <capsuleGeometry args={[.105,.65,5,8]}/>
-        <meshStandardMaterial color="#d2aa35" roughness={.42} metalness={.34}/>
-      </mesh>
-      <group ref={elbow} position={[0,.88,0]}>
-        <mesh position={[0,.38,0]} castShadow>
-          <capsuleGeometry args={[.09,.52,5,8]}/>
-          <meshStandardMaterial color="#bd982f" roughness={.42} metalness={.34}/>
-        </mesh>
-        <group ref={wrist} position={[0,.72,0]}>
-          <mesh position={[0,.21,0]} castShadow>
-            <capsuleGeometry args={[.065,.28,4,7]}/>
-            <meshStandardMaterial color="#8b949d" roughness={.4} metalness={.52}/>
-          </mesh>
-          <group position={[0,.47,0]}>
-            <mesh>
-              <cylinderGeometry args={[.045,.025,.18,8]}/>
-              <meshStandardMaterial color="#3d444a" roughness={.38} metalness={.62}/>
-            </mesh>
-            <group position={[0,.11,0]}>
-              <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>
-            </group>
-          </group>
-        </group>
-      </group>
+  return <group position={position} rotation={[0,mirror?Math.PI:0,0]} scale={.64}>
+    <primitive object={root}/>
+    <group ref={sparkAnchor}>
+      <WeldSparks motionRef={motionRef} trial={trial} stationIndex={stationIndex} disabled={sparksDisabled}/>
     </group>
   </group>
 }
+
+useGLTF.preload(ROBOT_URL)
 
 function TorqueEffect({
   x,
