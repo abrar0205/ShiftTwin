@@ -1560,6 +1560,7 @@ function FactoryWorld({
     [result,shift],
   )
   const mobile=typeof window!=='undefined'&&window.matchMedia(MOBILE_QUERY).matches
+  const [renderQuality,setRenderQuality]=useState(mobile?0:2)
   const bottleneckIndex=useMemo(()=>trial.stations.reduce((best,station,index,all)=>{
     const current=all[best]
     if(station.deficit>current.deficit) return index
@@ -1594,6 +1595,13 @@ function FactoryWorld({
     />
     <ShiftLighting shift={shift} reducedMotion={reducedMotion} focus={hasBottleneck} sequenceRef={sequenceRef}/>
     <LocalEnvironment/>
+    {!mobile&&!reducedMotion&&<PerformanceMonitor
+      factor={1}
+      bounds={()=>[45,60]}
+      flipflops={3}
+      onDecline={()=>setRenderQuality(level=>Math.max(0,level-1))}
+      onFallback={()=>setRenderQuality(0)}
+    />}
     <CameraDirector
       xs={xs}
       bottleneckIndex={bottleneckIndex}
@@ -1603,14 +1611,11 @@ function FactoryWorld({
       reducedMotion={reducedMotion}
     />
 
-    <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
-      <planeGeometry args={[45,18]}/>
-      <meshStandardMaterial color="#0b0f13" roughness={.66} metalness={.14}/>
-    </mesh>
+    <FactoryHall mobile={mobile} night={shift==='Night'}/>
 
-    <AreaZone x={-12} label="BODY SYSTEMS" night={shift==='Night'}/>
-    <AreaZone x={0} label="ASSEMBLY" night={shift==='Night'}/>
-    <AreaZone x={12} label="QUALITY & FLOW" night={shift==='Night'}/>
+    <AreaZone x={-12} label="BODY SYSTEMS"/>
+    <AreaZone x={0} label="ASSEMBLY"/>
+    <AreaZone x={12} label="QUALITY & FLOW"/>
 
     <Conveyor xs={xs} motionRef={motionRef}/>
     <CarFleet xs={xs} motionRef={motionRef}/>
@@ -1662,9 +1667,18 @@ function FactoryWorld({
       />
     })}
 
-    <ContactShadows position={[0,.02,0]} opacity={.38} scale={46} blur={2.6} far={12}/>
+    {(mobile||renderQuality<2)&&<ContactShadows position={[0,.02,0]} opacity={.32} scale={46} blur={2.5} far={12}/>}
     {!mobile&&!reducedMotion&&<EffectComposer multisampling={0}>
-      <Bloom intensity={.48} luminanceThreshold={1.12} luminanceSmoothing={.18} mipmapBlur/>
+      {renderQuality>=2&&<N8AO
+        aoRadius={2.2}
+        intensity={1.25}
+        quality="performance"
+        halfRes
+        distanceFalloff={1}
+      />}
+      {renderQuality>=1&&<Bloom intensity={.42} luminanceThreshold={1.08} luminanceSmoothing={.2} mipmapBlur/>}
+      <SMAA/>
+      <Vignette eskil={false} offset={.18} darkness={.38}/>
     </EffectComposer>}
 
     <OrbitControls
@@ -1721,6 +1735,10 @@ export default function FactoryFloorScene({
     frameloop={!active?'never':reducedMotion?'demand':'always'}
     camera={{position:[24,18,24],fov:30,near:.1,far:100}}
     gl={{antialias:true,powerPreference:'high-performance'}}
+    onCreated={({gl})=>{
+      gl.toneMapping=THREE.AgXToneMapping
+      gl.toneMappingExposure=1.05
+    }}
   >
     <FactoryWorld
       result={result}
