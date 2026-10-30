@@ -2,7 +2,7 @@ import { activeStationIds } from './coverage'
 import { simulate } from './montecarlo'
 import type { Intervention, Plan, Plant, Scenario, SimResult, Shift, WorkerRecord } from './types'
 
-const VERIFY_SAMPLES = 1800
+const VERIFY_SAMPLES = 5000
 const SEARCH_SAMPLES = 360
 const TARGET_LEAD_WEEKS = 3
 

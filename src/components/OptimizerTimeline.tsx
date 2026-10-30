@@ -21,7 +21,7 @@ function OptionCard({ option }: { option: Intervention }) {
 }
 
 export function OptimizerPanel() {
-  const { plan, optimize, optimizing, applyPlan, appliedPlan, result }=useTwinStore()
+  const { plan, optimize, optimizing, applyPlan, appliedPlan, applyingPlan, result }=useTwinStore()
   if (!result) return null
 
   return <section id="optimizer" className="content-section">
@@ -55,9 +55,9 @@ export function OptimizerPanel() {
           <span>verified resilience</span>
           <div><b>{plan.recommended.readinessBefore.toFixed(0)}</b><Icon name="arrow"/><strong>{plan.recommended.readinessAfter.toFixed(0)}</strong></div>
         </div>
-        <button className="apply-button" onClick={()=>void applyPlan()} disabled={appliedPlan}>
+        <button className="apply-button" onClick={()=>void applyPlan()} disabled={appliedPlan || applyingPlan}>
           <Icon name={appliedPlan?'check':'play'} size={16}/>
-          {appliedPlan?'Plan applied':'Apply plan'}
+          {appliedPlan ? 'Plan applied' : applyingPlan ? 'Healing line…' : 'Apply plan'}
         </button>
       </GlassPanel>
 

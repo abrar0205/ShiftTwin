@@ -34,7 +34,7 @@ function Slider({ label, value, min, max, step, suffix, onChange }: { label: str
 }
 
 export function ScenarioStudio() {
-  const { scenario, setScenario, runPreview, runScenario, running, reset } = useTwinStore()
+  const { scenario, setScenario, runPreview, runScenario, running, reset, reducedMotion } = useTwinStore()
   const timer = useRef<number | null>(null)
 
   const update = (patch: Partial<typeof scenario>) => {
@@ -44,6 +44,14 @@ export function ScenarioStudio() {
   }
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current) }, [])
+
+  const handleRun = async () => {
+    document.getElementById('floor')?.scrollIntoView({
+      behavior: reducedMotion ? 'auto' : 'smooth',
+      block: 'center',
+    })
+    await runScenario()
+  }
 
   return <section id="scenario" className="content-section">
     <SectionHeading eyebrow="SCENARIO STUDIO" title="Change the conditions. Watch the constraint emerge." body="Drag a control for a 300-trial ghost preview, then run the full 5,000-trial simulation." />
@@ -64,7 +72,7 @@ export function ScenarioStudio() {
 
       <div className="scenario-actions">
         <button className="quiet-button" onClick={()=>void reset()}><Icon name="reset"/> Reset</button>
-        <motion.button className="run-button" onClick={()=>void runScenario()} disabled={running} whileTap={{scale:.985}}>
+        <motion.button className="run-button" onClick={()=>void handleRun()} disabled={running} whileTap={{scale:.985}}>
           <span>{running ? 'SIMULATING…' : 'RUN SCENARIO'}</span>
           {!running && <Icon name="play" size={16}/>}
           {running && <i className="button-progress"/>}

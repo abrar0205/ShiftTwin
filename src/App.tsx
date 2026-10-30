@@ -53,7 +53,7 @@ function Loading() {
 }
 
 export default function App() {
-  const { initialize, result, baseline, previewResult, scenario, reducedMotion, setReducedMotion, error }=useTwinStore()
+  const { initialize, result, appliedResult, baseline, previewResult, scenario, reducedMotion, setReducedMotion, error }=useTwinStore()
   const [intro,setIntro]=useState(false)
 
   useEffect(()=>{
@@ -71,7 +71,8 @@ export default function App() {
     try { localStorage.setItem('shifttwin-intro-seen','1') } catch { /* storage may be unavailable */ }
   }
 
-  const risk=result?.worst.uncoveredProbability ?? 0
+  const visibleResult=appliedResult ?? result
+  const risk=visibleResult?.worst.uncoveredProbability ?? 0
   const sections=useMemo(()=>[
     ['command','Command'],['floor','Floor'],['scenario','Scenario'],['network','Network'],['analysis','Explain'],['optimizer','Optimize'],['timeline','Outlook']
   ],[])
@@ -93,12 +94,12 @@ export default function App() {
     </header>
 
     <main>
-      {!result || !baseline ? <Loading/> : <>
-        <CommandView result={result} preview={previewResult} scenario={scenario} reducedMotion={reducedMotion}/>
-        <FactoryFloorSection result={result} reducedMotion={reducedMotion}/>
+      {!result || !visibleResult || !baseline ? <Loading/> : <>
+        <CommandView result={visibleResult} preview={previewResult} scenario={scenario} reducedMotion={reducedMotion}/>
+        <FactoryFloorSection result={visibleResult} reducedMotion={reducedMotion}/>
         <ScenarioStudio/>
-        <SkillNetwork result={result} reducedMotion={reducedMotion}/>
-        <AnalysisPanels baseline={baseline} result={result}/>
+        <SkillNetwork result={visibleResult} reducedMotion={reducedMotion}/>
+        <AnalysisPanels baseline={baseline} result={visibleResult}/>
         <OptimizerPanel/>
         <Timeline/>
         <MethodPrivacy/>
