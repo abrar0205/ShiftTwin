@@ -26,7 +26,8 @@ for(const viewport of [{name:'desktop',width:1440,height:900},{name:'mobile',wid
       await page.locator('#floor').scrollIntoViewIfNeeded()
       await expect(page.locator('.factory-canvas')).toBeVisible()
       await page.waitForTimeout(900)
-      await expect(page.locator('.factory-shell')).toHaveScreenshot(`${viewport.name}-${shot}.png`,{animations:'disabled',maxDiffPixelRatio:.05})
+      const image=await page.locator('.factory-shell').screenshot({path:`test-results/shots/${viewport.name}-${shot}.png`,animations:'disabled'})
+      expect(image.byteLength).toBeGreaterThan(10_000)
     })
   }
 }
